@@ -604,6 +604,13 @@ else
   TTY=/dev/tty
 fi
 
+# A warned message needs an answer from a terminal; without one, refuse
+# instead of looping on a failed read.
+confirm_or_fail() {
+  echo "commit-msg: the message above needs confirmation, but there is no terminal; fix it or commit from a terminal" >&2
+  exit 1
+}
+
 while true; do
 
   read_commit_message
@@ -617,11 +624,13 @@ while true; do
 
   display_warnings
 
+  { : < "$TTY"; } 2>/dev/null || confirm_or_fail
+
   # Ask the question (not using "read -p" as it uses stderr not stdout)
   echo -en "${CYAN}Proceed with commit? [e/n/?] ${NC}"
 
   # Read the answer
-  read REPLY < "$TTY"
+  read REPLY < "$TTY" || exit 1
 
   # Check if the reply is valid
   case "$REPLY" in

@@ -64,7 +64,7 @@ rebuilds; `RV32EMU_REV=<commit-or-tag>` pins a revision instead. `make cycles` r
 |---|---|---|
 | `toolchain` | RV32I-only build flags | 5 |
 | `emulator` | 1: rv32emu with system emulation and `ELF_LOADER`; `main`'s return value reaches the exit status | 10 |
-| `rubik`, `bf16`, `gcd`, `fixed` | 2 and 3: per optimization level, only RV32I and the Zicsr counter reads, no undefined symbols, every micro-test passes, `main` returns 0, at least twenty tests, C and assembly agree on the benchmark inputs | 15 each |
+| `rubik`, `bf16`, `gcd`, `fixed` | 2 and 3: per optimization level, only RV32I and the Zicsr counter reads, no undefined symbols outside the allowed runtime routines, every micro-test passes, `main` returns 0, at least twenty tests, C and assembly agree on the benchmark inputs, the instruction budgets of the C and the assembly versions hold, the assembly takes at most the best C build's cycles per call plus 2, and the rubik data (every allocated section) stays within `RUBIK_DATA_BUDGET` | 15 each |
 | `disassembly` | 4: listings exist for every C build and for the assembly | 5 |
 | `cycles` | 5: each function has cycle data for the four C builds and the assembly | 10 |
 | `footprint` | 5: `size -A` works on every implementation | 5 |
@@ -77,7 +77,7 @@ hygiene) pass for any skeleton, so each counts in proportion to the programs tha
 of the HackMD note, the optimization results and the CodeTrial mock interview are reviewed by hand and are not
 part of the script. Run `scripts/driver.py --help` for the options, for example `--prog gcd` and `--min-tests`.
 
-The skeleton starts red on purpose: every program has a placeholder test that fails until it is replaced.
+The skeleton starts red on purpose: the dummy implementations return constants, so no program passes until it is written.
 
 ## Layout
 

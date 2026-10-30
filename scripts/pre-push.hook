@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+
+# Runs build and sanitizer checks before pushing to main
+
+# Ensure that the common script exists and is readable, then verify it has no
+# syntax errors and defines the required function.
+common_script="$(dirname "$0")/../../scripts/common.sh"
+[ -r "$common_script" ] || { echo "[!] '$common_script' not found or not readable." >&2; exit 1; }
+bash -n "$common_script" >/dev/null 2>&1 || { echo "[!] '$common_script' contains syntax errors." >&2; exit 1; }
+source "$common_script"
+declare -F set_colors >/dev/null 2>&1 || { echo "[!] '$common_script' does not define the required function." >&2; exit 1; }
+
+set_colors
+
+protected_branch='main'
+current_branch=$(git symbolic-ref --short HEAD 2>/dev/null || echo "detached")
+
+# Show helpful hints for common issues
+show_hints() {
+  echo -e "${YELLOW}Hint${NC}: If Git keeps asking for your password, see:"
+  echo -e "      https://docs.github.com/en/get-started/getting-started-with-git/why-is-git-always-asking-for-my-password"
+  echo ""
+}
+
+# Run build checks for protected branch
+run_build_checks() {
+  echo -e "${YELLOW}Running pre-push checks for $protected_branch branch...${NC}"
+  echo ""
+
+  # Clean previous build artifacts for fresh check
+  printf "${YELLOW}Cleaning previous build...${NC}"
+  make clean >/dev/null 2>&1 || true
+  printf " [ ${GREEN}OK${NC} ]\n"
+
+  printf "${YELLOW}Building project...${NC}"
+
+  # Capture build output for better error reporting
+  build_output=$(make 2>&1 && make sanitize 2>&1)
+  build_result=$?
+
+  if [ $build_result -ne 0 ]; then
+    printf " [ ${RED}FAIL${NC} ]\n"
+    echo ""
+    echo "Build output:"
+    echo "============="
+    echo "$build_output" | tail -20
+    echo "============="
+    echo ""
+    echo -e "${RED}Please fix build errors before pushing to $protected_branch${NC}"
+    return 1
+  fi
+
+  printf " [ ${GREEN}OK${NC} ]\n"
+
+  # Additional checks could be added here
+  # For example: basic tests, format checks, etc.
+
+  return 0
+}
+
+# Main execution
+main() {
+  show_hints
+
+  # Check if pushing to protected branch
+  if [ "$current_branch" = "$protected_branch" ]; then
+    if ! run_build_checks; then
+      exit 1
+    fi
+
+    echo ""
+    echo -e "${GREEN}All pre-push checks passed!${NC}"
+    echo -e "${GREEN}Pushing to $protected_branch...${NC}"
+    echo ""
+  else
+    echo -e "${CYAN}Pushing to branch: $current_branch${NC}"
+    echo -e "${CYAN}(Pre-push checks are only run for $protected_branch)${NC}"
+    echo ""
+  fi
+
+  exit 0
+}
+
+# Handle script interruption gracefully
+trap 'echo -e "\n${YELLOW}Pre-push hook interrupted${NC}"; exit 130' INT TERM
+
+main "$@"

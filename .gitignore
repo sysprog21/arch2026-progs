@@ -1,0 +1,14 @@
+/build/
+/results/*.csv
+/results/*.md
+/results/*.png
+/third_party/
+.cmd_history
+.out
+*.o
+*.d
+*.elf
+*.dSYM
+.DS_Store
+__pycache__/
+/tools/

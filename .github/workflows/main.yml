@@ -20,7 +20,6 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
-  XPACK_GCC: 15.2.0-1
   CLANG_FORMAT_VERSION: 20.1.8
   # Hosted runners have 4 cores (2 on private repositories); the builds are
   # independent per level, so oversubscribing a little is harmless.
@@ -42,7 +41,7 @@ jobs:
       run: make unittest
     - name: clang-format 20
       run: |
-        pipx install clang-format==${CLANG_FORMAT_VERSION}
+        pipx install "clang-format==${CLANG_FORMAT_VERSION}"
         CLANG_FORMAT=clang-format .ci/format.sh
 
   # The hash chain of Change-Ids needs the whole history, and a pull request
@@ -94,8 +93,13 @@ jobs:
   # budgets, vectors, scripts, Makefile) is the instructor's, from main; only
   # src/<prog>/ comes from the submission, so editing a test or a budget in a
   # fork changes nothing. The emulator is built from the instructor's rules too.
+  # The instructor's repository holds the skeleton, which scores 0 by design,
+  # so it is not graded here: main is covered by the reference job below, and a
+  # pull request that changes the harness by the manual reference-pr workflow.
   grade:
-    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    if: >-
+      github.repository != 'sysprog21/arch2026-progs' &&
+      (github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository)
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -116,61 +120,7 @@ jobs:
             exit 1
           }
         done
-    - name: install-dependencies
-      run: |
-        # build-essential is already on the runner image.
-        sudo apt-get update -q
-        sudo apt-get -q -y install --no-install-recommends \
-            device-tree-compiler python3-matplotlib
-    # The caches are saved right after their build: a plain cache step saves
-    # only when the whole job passes, and the skeleton fails grading by design.
-    - name: restore the cross toolchain
-      id: xpack
-      uses: actions/cache/restore@v6
-      with:
-        path: ${{ runner.temp }}/xpack-riscv-none-elf-gcc-${{ env.XPACK_GCC }}
-        key: xpack-${{ runner.os }}-${{ runner.arch }}-${{ env.XPACK_GCC }}
-    - name: download the cross toolchain
-      if: steps.xpack.outputs.cache-hit != 'true'
-      run: |
-        name=xpack-riscv-none-elf-gcc-${XPACK_GCC}-linux-x64.tar.gz
-        url=https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases/download/v${XPACK_GCC}
-        cd "$RUNNER_TEMP"
-        curl --fail --location --retry 3 -O "$url/$name" -O "$url/$name.sha"
-        sha256sum -c "$name.sha"
-        tar -xzf "$name"
-    - name: save the cross toolchain
-      if: steps.xpack.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v6
-      with:
-        path: ${{ runner.temp }}/xpack-riscv-none-elf-gcc-${{ env.XPACK_GCC }}
-        key: ${{ steps.xpack.outputs.cache-primary-key }}
-    - run: echo "$RUNNER_TEMP/xpack-riscv-none-elf-gcc-${XPACK_GCC}/bin" >> "$GITHUB_PATH"
-    # rv32emu is always the latest upstream commit; the cache is keyed on it,
-    # so a new upstream commit is a miss and a rebuild, never a stale hit.
-    - name: resolve the latest rv32emu
-      id: emu
-      run: |
-        sha=$(make -C .trusted -s emu-rev)
-        [[ $sha =~ ^[0-9a-f]{40}$ ]]
-        echo "sha=$sha" >> "$GITHUB_OUTPUT"
-    - name: restore rv32emu
-      id: emu-cache
-      uses: actions/cache/restore@v6
-      with:
-        path: .trusted/third_party/rv32emu
-        key: rv32emu-${{ runner.os }}-${{ runner.arch }}-${{ steps.emu.outputs.sha }}-${{ hashFiles('.trusted/mk/rv32emu.mk') }}
-    - name: build rv32emu
-      if: steps.emu-cache.outputs.cache-hit != 'true'
-      run: |
-        rm -rf .trusted/third_party/rv32emu
-        make -C .trusted deps RV32EMU_REV=${{ steps.emu.outputs.sha }}
-    - name: save rv32emu
-      if: steps.emu-cache.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v6
-      with:
-        path: .trusted/third_party/rv32emu
-        key: ${{ steps.emu-cache.outputs.cache-primary-key }}
+    - uses: ./.github/actions/rv32-env
     - name: grade
       run: |
         .trusted/scripts/grade.sh --submission . --out results
@@ -186,11 +136,46 @@ jobs:
         name: cycles
         path: results/
 
+  # The reference solutions live in a private repository. Only this job holds
+  # its read-only deploy key, as a secret of the protected Environment
+  # "reference", which accepts the branch main alone; no other branch, no pull
+  # request and no fork ever receives it. The job runs the code of main, which
+  # is reviewed, and prints only the name and total of each case: a build error
+  # would quote the reference, so no log and no artifact is kept.
+  reference:
+    if: github.event_name == 'push' && github.repository == 'sysprog21/arch2026-progs' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: reference
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ github.sha }}
+        path: .trusted
+        persist-credentials: false
+    - uses: ./.github/actions/rv32-env
+    - name: provision the reference solutions
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      run: |
+        .trusted/.ci/provision.sh "$RUNNER_TEMP/reference"
+        test -d "$RUNNER_TEMP/reference/src" || {
+          echo "::error::no reference solutions: the Environment reference lacks SSH_PRIVATE_KEY"
+          exit 1
+        }
+    # The reference must score 100, the untouched skeleton 0, and every
+    # negative case of the private repository what its "expect" file says.
+    - name: check the grader
+      run: .trusted/.ci/check-grade.sh .trusted/scripts/grade.sh "$RUNNER_TEMP/reference" .
+
   # One result to read, and to require in a branch protection rule. A skipped
   # job (a same-repository pull request) counts as passed.
   ci:
     if: ${{ always() }}
-    needs: [lint, chain, grade]
+    needs: [lint, chain, grade, reference]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:

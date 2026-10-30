@@ -51,6 +51,7 @@ chaintest:
 .PHONY: unittest
 unittest:
 	@python3 -m unittest discover -s scripts -p 'test*.py'
+	@bash .ci/test-check-grade.sh
 
 .PHONY: deps toolchain emu
 deps: emu

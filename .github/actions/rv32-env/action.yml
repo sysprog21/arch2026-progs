@@ -1,0 +1,84 @@
+name: RV32 environment
+description: The cross toolchain and the rv32emu emulator, cached, for the grade jobs.
+
+inputs:
+  harness:
+    description: Checkout of the instructor's harness that builds the emulator.
+    default: .trusted
+  xpack-gcc:
+    description: Version of the xPack RISC-V GCC.
+    default: 15.2.0-1
+
+runs:
+  using: composite
+  steps:
+  - name: install-dependencies
+    shell: bash
+    run: |
+      # build-essential is already on the runner image.
+      sudo apt-get update -q
+      sudo apt-get -q -y install --no-install-recommends \
+          device-tree-compiler python3-matplotlib
+  # The caches are saved right after their build: a plain cache step saves
+  # only when the whole job passes, and the skeleton fails grading by design.
+  - name: restore the cross toolchain
+    id: xpack
+    uses: actions/cache/restore@v6
+    with:
+      path: ${{ runner.temp }}/xpack-riscv-none-elf-gcc-${{ inputs.xpack-gcc }}
+      key: xpack-${{ runner.os }}-${{ runner.arch }}-${{ inputs.xpack-gcc }}
+  - name: download the cross toolchain
+    if: steps.xpack.outputs.cache-hit != 'true'
+    shell: bash
+    env:
+      XPACK_GCC: ${{ inputs.xpack-gcc }}
+    run: |
+      name=xpack-riscv-none-elf-gcc-${XPACK_GCC}-linux-x64.tar.gz
+      url=https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases/download/v${XPACK_GCC}
+      cd "$RUNNER_TEMP"
+      curl --fail --location --retry 3 -O "$url/$name" -O "$url/$name.sha"
+      sha256sum -c "$name.sha"
+      tar -xzf "$name"
+  - name: save the cross toolchain
+    if: steps.xpack.outputs.cache-hit != 'true'
+    uses: actions/cache/save@v6
+    with:
+      path: ${{ runner.temp }}/xpack-riscv-none-elf-gcc-${{ inputs.xpack-gcc }}
+      key: ${{ steps.xpack.outputs.cache-primary-key }}
+  - name: put the cross toolchain on PATH
+    shell: bash
+    env:
+      XPACK_GCC: ${{ inputs.xpack-gcc }}
+    run: echo "$RUNNER_TEMP/xpack-riscv-none-elf-gcc-${XPACK_GCC}/bin" >> "$GITHUB_PATH"
+  # rv32emu is always the latest upstream commit; the cache is keyed on it,
+  # so a new upstream commit is a miss and a rebuild, never a stale hit.
+  - name: resolve the latest rv32emu
+    id: emu
+    shell: bash
+    env:
+      HARNESS: ${{ inputs.harness }}
+    run: |
+      sha=$(make -C "$HARNESS" -s emu-rev)
+      [[ $sha =~ ^[0-9a-f]{40}$ ]]
+      echo "sha=$sha" >> "$GITHUB_OUTPUT"
+  - name: restore rv32emu
+    id: emu-cache
+    uses: actions/cache/restore@v6
+    with:
+      path: ${{ inputs.harness }}/third_party/rv32emu
+      key: rv32emu-${{ runner.os }}-${{ runner.arch }}-${{ steps.emu.outputs.sha }}-${{ hashFiles(format('{0}/mk/rv32emu.mk', inputs.harness)) }}
+  - name: build rv32emu
+    if: steps.emu-cache.outputs.cache-hit != 'true'
+    shell: bash
+    env:
+      HARNESS: ${{ inputs.harness }}
+      EMU_SHA: ${{ steps.emu.outputs.sha }}
+    run: |
+      rm -rf "$HARNESS/third_party/rv32emu"
+      make -C "$HARNESS" deps RV32EMU_REV="$EMU_SHA"
+  - name: save rv32emu
+    if: steps.emu-cache.outputs.cache-hit != 'true'
+    uses: actions/cache/save@v6
+    with:
+      path: ${{ inputs.harness }}/third_party/rv32emu
+      key: ${{ steps.emu-cache.outputs.cache-primary-key }}

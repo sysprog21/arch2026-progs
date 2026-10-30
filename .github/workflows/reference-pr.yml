@@ -1,0 +1,71 @@
+name: Reference check of a pull request
+
+# Checks the grader of a pull request against the reference solutions and the
+# negative cases of the private repository, to prove that a change to tests,
+# scripts or the Makefile still accepts a correct submission and still rejects
+# the cheating ones. A maintainer starts it by hand, for one pull request and the
+# exact commit that was read.
+#
+# This is not a sandbox. The harness of the pull request (Makefile, mk/,
+# scripts/*.py, tests/*.c and the host binaries built from them, include paths)
+# executes on a runner where the reference sources are on disk, and a hosted
+# runner has open network access. The only control is the reviewer of the
+# Environment "reference-pr": approve the run only after reading every changed
+# file at the SHA given below, not only src/. The key itself is read by the
+# provisioning script of main before any code of the pull request runs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+      sha:
+        description: Full SHA of the head commit that was reviewed
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  reference:
+    if: github.repository == 'sysprog21/arch2026-progs' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    environment: reference-pr
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@v7
+      with:
+        ref: ${{ github.sha }}
+        path: .trusted
+        persist-credentials: false
+    - name: fetch the reviewed head
+      env:
+        PR: ${{ inputs.pr }}
+        SHA: ${{ inputs.sha }}
+      run: |
+        [[ $PR =~ ^[0-9]+$ && $SHA =~ ^[0-9a-f]{40}$ ]]
+        git init -q pr
+        git -C pr fetch -q --depth 1 "https://github.com/$GITHUB_REPOSITORY" "refs/pull/$PR/head"
+        [ "$(git -C pr rev-parse FETCH_HEAD)" = "$SHA" ]
+        git -C pr checkout -q --detach FETCH_HEAD
+        git -C pr log -1 --format='reviewing %H %s'
+    # The toolchain and the emulator come from main; only then does the pull
+    # request's code run.
+    - uses: ./.github/actions/rv32-env
+    - name: provision the reference solutions, with the script of main
+      env:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      run: |
+        .trusted/.ci/provision.sh "$RUNNER_TEMP/reference"
+        test -d "$RUNNER_TEMP/reference/src" || {
+          echo "::error::no reference solutions: the Environment reference-pr lacks SSH_PRIVATE_KEY"
+          exit 1
+        }
+    - name: check the grader of the pull request
+      run: |
+        ln -s "$PWD/.trusted/third_party" pr/third_party
+        .trusted/.ci/check-grade.sh pr/scripts/grade.sh "$RUNNER_TEMP/reference" pr

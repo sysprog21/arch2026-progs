@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+# Repair the Change-Id of the commit just made, if it does not continue the hash
+# chain (see scripts/chain.sh). The commit-msg hook cannot always tell an amend
+# from a new commit; this hook can, because the commit exists by now. It never
+# fails the commit.
+
+"$(dirname "$0")/../../scripts/chain.sh" fix || true
+exit 0

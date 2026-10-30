@@ -62,7 +62,7 @@ static const uint32_t bf16_f32_cases[80] = {
 };
 #define BF16_NF32 40
 
-/* 256 interesting patterns; the grid multiplies every pair, one hash per row */
+/* 256 patterns; the grid multiplies every pair, one hash per row */
 static const uint16_t bf16_pts[256] = {
     0x0000, 0x8000, 0x7F80, 0xFF80, 0x7FC0, 0xFFC0, 0x7F81, 0xFFBF, 0x0001,
     0x0002, 0x0040, 0x007F, 0x8001, 0x807F, 0x0080, 0x0081, 0x00FF, 0x0100,
@@ -140,7 +140,7 @@ static const uint32_t bf16_mul_row_hash[256] = {
     0xC37B1310, 0x604F4D6C, 0xCAF0552F, 0x0D0CEA21,
 };
 
-/* constants c; for each, 64 hashes of bf16_mul(a, c) over a blocks of 1024 */
+/* constants c; for each, 64 hashes of bf16_mul(a, c) per 1024 values of a */
 static const uint16_t bf16_consts[8] = {
     0x3F80, 0x4000, 0x3F00, 0xBF80, 0x3F81, 0x7F7F, 0x0001, 0x7F80,
 };

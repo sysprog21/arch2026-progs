@@ -11,4 +11,5 @@
 *.dSYM
 .DS_Store
 __pycache__/
-/tools/
+/tools/oracle/
+/.trusted/

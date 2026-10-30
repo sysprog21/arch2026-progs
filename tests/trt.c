@@ -9,10 +9,11 @@
 extern uint64_t get_cycles(void);
 extern uint64_t get_instret(void);
 
-/* ---- __mulsi3 ---- */
+/* __mulsi3 */
 
 /* Independent product: byte-wise partial products, each formed by repeated
- * addition, so it uses neither shifts of the multiplier nor __mulsi3. */
+ * addition, so it uses neither shifts of the multiplier nor __mulsi3.
+ */
 static uint32_t ref_mul(uint32_t a, uint32_t b)
 {
     uint32_t r = 0;
@@ -62,7 +63,7 @@ static int test_mulsi3_random(void)
     return TEST_PASS;
 }
 
-/* ---- memory and string helpers ---- */
+/* memory and string helpers */
 
 static int test_memcpy_memset(void)
 {
@@ -114,8 +115,9 @@ static int test_memmove(void)
 
 static int test_memcmp_strlen(void)
 {
-    /* The strings go through volatile pointers so the checks run the code
-     * under test instead of being folded away. */
+    /* The strings go through volatile pointers so the checks run the code under
+     * test instead of being folded away.
+     */
     const char *volatile abc = "abc", *volatile abd = "abd";
     ASSERT_EQ(memcmp(abc, "abc", 3), 0);
     ASSERT_EQ(memcmp(abc, abd, 3) < 0, 1);
@@ -133,7 +135,7 @@ static int test_memcmp_strlen(void)
     return TEST_PASS;
 }
 
-/* ---- printer ---- */
+/* printer */
 
 static int test_printf_integers(void)
 {
@@ -184,7 +186,8 @@ static int test_printf_other(void)
 }
 
 /* Output is cut to cap - 1 characters, terminated, and the full length is
- * returned; cap 0 writes nothing. */
+ * returned; cap 0 writes nothing.
+ */
 static int test_printf_truncation(void)
 {
     char b[8];
@@ -203,7 +206,7 @@ static int test_printf_truncation(void)
     return TEST_PASS;
 }
 
-/* ---- startup and counters ---- */
+/* startup and counters */
 
 static volatile uint32_t zeroed[64];
 static volatile uint32_t initialized[4] = {1, 2, 3, 4};

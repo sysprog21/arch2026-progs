@@ -14,7 +14,8 @@ static inline uint32_t xs32(uint32_t x)
 }
 
 /* A shift-and-add hash of a word sequence (no multiply). tools/oracle/gen.py
- * computes the same value for the golden tables in *vec.h. */
+ * computes the same value for the golden tables in *vec.h.
+ */
 #define HASH_INIT 0x9E3779B9u
 
 static inline uint32_t hash_add(uint32_t h, uint32_t v)
@@ -34,7 +35,8 @@ static inline uint32_t hash_fin(uint32_t h)
 }
 
 /* Restoring division, one quotient bit per step: the reference for tests that
- * need a quotient or a remainder without trusting any code under test. */
+ * need a quotient or a remainder without trusting any code under test.
+ */
 static inline uint32_t ref_udivmod(uint32_t a, uint32_t b, uint32_t *rem)
 {
     uint32_t q = 0, r = 0;

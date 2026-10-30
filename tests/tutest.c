@@ -1,8 +1,7 @@
 #include <stddef.h>
 #include "utest.h"
 
-/*
- * Checks of the assertion macros themselves: each failing assertion lives in
+/* Checks of the assertion macros themselves: each failing assertion lives in
  * its own function so the test can observe TEST_FAIL instead of failing. The
  * failing helpers print their message, which is expected output here.
  */
@@ -129,7 +128,8 @@ static int test_equality(void)
 }
 
 /* The distance is symmetric and never wraps, including for the extremes that
- * break an ABS-style macro. */
+ * break an ABS-style macro.
+ */
 static int test_almost_equal(void)
 {
     EXPECT_PASS(f_aeq(10, 12, 2));

@@ -2,14 +2,13 @@
 
 #include <stdint.h>
 
-/*
- * BFloat16 (Quiz 1 Problem B): 1 sign bit, 8 exponent bits (bias 127), 7
+/* BFloat16 (Quiz 1 Problem B): 1 sign bit, 8 exponent bits (bias 127), 7
  * fraction bits, carried as the 16-bit pattern. No float is ever used in
  * arithmetic; a binary32 value travels as its uint32_t bit pattern.
  *
  * Special values: +0 is 0x0000, -0 is 0x8000, +Inf is 0x7F80, -Inf is 0xFF80,
- * and the quiet NaN this code produces is 0x7FC0. An exponent field of 0 with
- * a nonzero fraction is a denormal.
+ * and the quiet NaN this code produces is 0x7FC0. An exponent field of 0 with a
+ * nonzero fraction is a denormal.
  *
  * bf16_from_f32(f32bits): narrow a binary32 pattern.
  *   * Exponent field 0xFF (Inf and NaN): return the top 16 bits unchanged.
@@ -47,8 +46,8 @@
  *     the worst relative error over the positive normals is 0.3884%.
  *
  * The C versions carry the plain names and the hand-written RV32I versions an
- * _asm suffix. Both must agree on every input; neither may use mul, div, rem
- * or a libgcc routine except the __mulsi3 the runtime supplies.
+ * _asm suffix. Both must agree on every input; neither may use mul, div, rem or
+ * a libgcc routine except the __mulsi3 the runtime supplies.
  */
 uint16_t bf16_from_f32(uint32_t f32bits);
 uint16_t bf16_mul(uint16_t a, uint16_t b);
@@ -59,5 +58,18 @@ uint16_t bf16_from_f32_asm(uint32_t f32bits);
 uint16_t bf16_mul_asm(uint16_t a, uint16_t b);
 uint16_t bf16_sqrt_asm(uint16_t a);
 #endif
+
+/* Instruction budgets: the most instructions one call may retire, for any
+ * operands (tests/tbf16.c measures them with the instret counter). The assembly
+ * is the deliverable and gets the tight budget, which admits a shift-and-add
+ * multiply; the C version is the step on the way and only has to stay within
+ * the loose one.
+ */
+#define BF16_F32_INSN_BUDGET 60u
+#define BF16_MUL_INSN_BUDGET 400u
+#define BF16_SQRT_INSN_BUDGET 1500u
+#define BF16_C_F32_INSN_BUDGET 150u
+#define BF16_C_MUL_INSN_BUDGET 1000u
+#define BF16_C_SQRT_INSN_BUDGET 4000u
 
 void bf16_register_tests(void);

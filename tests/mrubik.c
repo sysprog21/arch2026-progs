@@ -1,6 +1,6 @@
 #include "bench.h"
 #include "print.h"
-#include "rubik.h"
+#include "src/rubik/rubik.h"
 #include "tests.h"
 #include "utest.h"
 

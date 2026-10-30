@@ -8,13 +8,15 @@ common_script="$(dirname "$0")/common.sh"
 source "$common_script"
 set_colors
 
+"$(dirname "$0")/chain.sh" verify || exit 1
+
 check_github_actions
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   throw "This directory is not a Git repository."
 fi
 
-for hook in pre-commit commit-msg pre-push prepare-commit-msg; do
+for hook in pre-commit commit-msg post-commit pre-push prepare-commit-msg; do
   if [ ! -x ".git/hooks/$hook" ]; then
     throw "Git hook '%s' is not installed. Run 'make' once to install the hooks." "$hook"
   fi

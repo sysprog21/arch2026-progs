@@ -2,7 +2,7 @@
 
 # Fail when a C source or header differs from clang-format 20 output.
 CLANG_FORMAT="${CLANG_FORMAT:-clang-format-20}"
-SOURCES=$(git ls-files 'src/*.[ch]' 'common/*.[ch]' 'tests/*.[ch]')
+SOURCES=$(git ls-files 'src/*.[ch]' 'common/*.[ch]' 'tests/*.[ch]' 'tools/*.[ch]')
 
 ret=0
 for file in ${SOURCES}; do

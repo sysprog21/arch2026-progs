@@ -20,7 +20,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from benchlib import collect, sections  # noqa: E402
+from benchlib import BenchError, collect, sections  # noqa: E402
 
 PROGS = ["rubik", "bf16", "gcd", "fixed"]
 OPTS = ["O1", "O2", "O3", "Os"]
@@ -194,41 +194,52 @@ def plot(out, table, fp):
     return written
 
 
+def report(rows, build, out, prefix):
+    """Write the tables and charts for rows of benchmark data; return the file names."""
+    os.makedirs(out, exist_ok=True)
+    cols = ["prog", "fn", "impl", "opt", "n", "cycles", "overhead", "per_call", "instret", "per_call_instret", "checksum"]
+    with open(os.path.join(out, "cycles.csv"), "w", newline="") as f:
+        wr = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
+        wr.writeheader()
+        wr.writerows(rows)
+    fp = footprint(build, prefix)
+    with open(os.path.join(out, "footprint.csv"), "w", newline="") as f:
+        wr = csv.DictWriter(f, fieldnames=["prog", "variant"] + SECTIONS)
+        wr.writeheader()
+        wr.writerows(fp)
+
+    table = per_call_table(rows)
+    gcc = sh([prefix + "gcc", "-dumpfullversion"]).strip()
+    rev = sh(["git", "-C", "third_party/rv32emu", "rev-parse", "--short", "HEAD"]).strip()
+    meta = {
+        "compiler": f"{prefix}gcc {gcc}, -march=rv32i_zicsr -mabi=ilp32 -ffreestanding",
+        "rv32emu": f"{rev} (system emulation, ELF_LOADER, interpreter)",
+        "timed region": "n calls on identical inputs; loop baseline subtracted",
+    }
+    write_markdown(os.path.join(out, "cycles.md"), table, fp, meta)
+    written = plot(out, table, fp)
+    return ["cycles.csv", "footprint.csv", "cycles.md"] + [os.path.basename(p) for p in written]
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--emu", default="third_party/rv32emu/build/rv32emu")
     ap.add_argument("--build", default="build")
     ap.add_argument("--out", default="results")
     ap.add_argument("--prefix", default=os.environ.get("CROSS_COMPILE") or sh(["scripts/toolchain.sh", "--detect"]).strip())
+    ap.add_argument("--timeout", type=int, default=120, help="seconds one ELF may run (default 120)")
     args = ap.parse_args()
-    os.makedirs(args.out, exist_ok=True)
 
-    rows = collect(args.emu, args.build, PROGS, OPTS)
+    try:
+        rows = collect(args.emu, args.build, PROGS, OPTS, args.timeout)
+    except BenchError as e:
+        print(e)
+        return 1
     if not rows:
         print("no benchmark lines; build the ELF files first (make)")
         return 1
-    cols = ["prog", "fn", "impl", "opt", "n", "cycles", "overhead", "per_call", "instret", "per_call_instret", "checksum"]
-    with open(os.path.join(args.out, "cycles.csv"), "w", newline="") as f:
-        wr = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
-        wr.writeheader()
-        wr.writerows(rows)
-    fp = footprint(args.build, args.prefix)
-    with open(os.path.join(args.out, "footprint.csv"), "w", newline="") as f:
-        wr = csv.DictWriter(f, fieldnames=["prog", "variant"] + SECTIONS)
-        wr.writeheader()
-        wr.writerows(fp)
-
-    table = per_call_table(rows)
-    gcc = sh([args.prefix + "gcc", "-dumpfullversion"]).strip()
-    rev = sh(["git", "-C", "third_party/rv32emu", "rev-parse", "--short", "HEAD"]).strip()
-    meta = {
-        "compiler": f"{args.prefix}gcc {gcc}, -march=rv32i_zicsr -mabi=ilp32 -ffreestanding",
-        "rv32emu": f"{rev} (system emulation, ELF_LOADER, interpreter)",
-        "timed region": "n calls on identical inputs; loop baseline subtracted",
-    }
-    write_markdown(os.path.join(args.out, "cycles.md"), table, fp, meta)
-    written = plot(args.out, table, fp)
-    print(f"wrote {args.out}/cycles.csv, footprint.csv, cycles.md" + "".join(f", {os.path.basename(p)}" for p in written))
+    names = report(rows, args.build, args.out, args.prefix)
+    print(f"wrote {args.out}/" + ", ".join(names))
     return 0
 
 

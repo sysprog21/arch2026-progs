@@ -1,6 +1,7 @@
 #include <stddef.h>
-#include "bf16.h"
 #include "bf16vec.h"
+#include "src/bf16/bf16.h"
+#include "tperf.h"
 #include "tutil.h"
 #include "utest.h"
 
@@ -19,7 +20,8 @@ static int is_nan(uint16_t x)
 }
 
 /* Independent formulation of the narrowing: compare the discarded half with
- * 0x8000 instead of adding 0x7FFF plus the lowest kept bit. */
+ * 0x8000 instead of adding 0x7FFF plus the lowest kept bit.
+ */
 static uint16_t ref_from_f32(uint32_t f)
 {
     uint32_t hi = f >> 16, lo = f & 0xFFFFu;
@@ -30,7 +32,7 @@ static uint16_t ref_from_f32(uint32_t f)
     return (uint16_t) hi;
 }
 
-/* ---- bf16_from_f32 ---- */
+/* bf16_from_f32 */
 
 static int check_f32_cases(const struct impl *m)
 {
@@ -47,7 +49,8 @@ static int check_f32_cases(const struct impl *m)
 
 /* Every discarded half (65,536 values) under 16 characteristic kept halves:
  * normal, odd and even mantissas, the largest finite, denormals, zeros,
- * infinities and NaNs of both signs. Covers both values of bit 16. */
+ * infinities and NaNs of both signs. Covers both values of bit 16.
+ */
 static int check_f32_low_halves(const struct impl *m)
 {
     static const uint16_t highs[] = {
@@ -67,7 +70,8 @@ static int check_f32_low_halves(const struct impl *m)
 }
 
 /* Every kept half (65,536 values) with the discarded halves that decide
- * rounding: zero, just below a tie, the tie, just above, all ones. */
+ * rounding: zero, just below a tie, the tie, just above, all ones.
+ */
 static int check_f32_high_halves(const struct impl *m)
 {
     static const uint16_t lows[] = {0x0000, 0x7FFF, 0x8000, 0x8001, 0xFFFF};
@@ -83,7 +87,7 @@ static int check_f32_high_halves(const struct impl *m)
     return TEST_PASS;
 }
 
-/* ---- bf16_mul ---- */
+/* bf16_mul */
 
 static int check_mul_cases(const struct impl *m)
 {
@@ -112,7 +116,8 @@ static int check_mul_grid(const struct impl *m)
 }
 
 /* All 65,536 values of a against 8 constants, one golden hash per block of
- * 1,024 values of a. */
+ * 1,024 values of a.
+ */
 static int check_mul_columns(const struct impl *m)
 {
     for (int c = 0; c < 8; c++) {
@@ -129,7 +134,8 @@ static int check_mul_columns(const struct impl *m)
 }
 
 /* Laws that hold without the oracle: commutativity away from NaN, the sign
- * rule, 1.0 as the identity on normals, zero and infinity handling. */
+ * rule, 1.0 as the identity on normals, zero and infinity handling.
+ */
 static int check_mul_laws(const struct impl *m)
 {
     for (int i = 0; i < 256; i++) {
@@ -138,7 +144,8 @@ static int check_mul_laws(const struct impl *m)
             uint16_t b = bf16_pts[j], p = m->mul(a, b);
             if (is_nan(a) || is_nan(b)) {
                 /* a is examined first: a NaN a wins, an infinite a swallows a
-                 * NaN b, otherwise the NaN b is returned. */
+                 * NaN b, otherwise the NaN b is returned.
+                 */
                 uint16_t want =
                     is_nan(a) ? a
                     : (a & 0x7FFF) == BF16_INF
@@ -170,7 +177,7 @@ static int check_mul_laws(const struct impl *m)
     return TEST_PASS;
 }
 
-/* ---- bf16_sqrt ---- */
+/* bf16_sqrt */
 
 static int check_sqrt_cases(const struct impl *m)
 {
@@ -199,7 +206,8 @@ static int check_sqrt_all(const struct impl *m)
 
 /* Properties over the positive normals: monotone, and the result squared is
  * within 1% of the input (the routine is not correctly rounded; its worst
- * relative error is 0.39%, so the square is within about 0.78%). */
+ * relative error is 0.39%, so the square is within about 0.78%).
+ */
 static int check_sqrt_laws(const struct impl *m)
 {
     uint16_t prev = 0;
@@ -208,8 +216,10 @@ static int check_sqrt_laws(const struct impl *m)
         if (r < prev)
             UTEST_FAILED("sqrt is not monotone at 0x%x\n", x);
         prev = r;
-        /* x = mx * 2^(ex - 134), r = mr * 2^(er - 134), both mantissas with
-         * the hidden one; compare r*r with x after aligning the exponents. */
+
+        /* x = mx * 2^(ex - 134), r = mr * 2^(er - 134), both mantissas with the
+         * hidden one; compare r*r with x after aligning the exponents.
+         */
         if ((r >> 7) == 0 || (r >> 7) >= 0xFF)
             UTEST_FAILED("sqrt(0x%x) = 0x%x is not a positive normal\n", x, r);
         uint32_t mx = 0x80 | (x & 0x7F), mr = 0x80 | (r & 0x7F);
@@ -247,6 +257,68 @@ static int check_sqrt_classes(const struct impl *m)
     ASSERT_UNSIGNED_EQ(m->sqrt(0xFF80), BF16_NAN);
     return TEST_PASS;
 }
+
+#ifdef __riscv
+struct worst {
+    uint64_t insns;
+    uint32_t a, b;
+};
+
+static void note(struct worst *w, uint64_t used, uint32_t a, uint32_t b)
+{
+    if (used > w->insns) {
+        w->insns = used;
+        w->a = a;
+        w->b = b;
+    }
+}
+
+/* The most expensive call of each routine over the whole operand space (every
+ * square root input, the 256 x 256 grid of the multiply, 8,192 narrowings) has
+ * to fit its budget. The figures are printed for tuning.
+ */
+static int check_perf(const struct impl *m)
+{
+    struct worst f32 = {0, 0, 0}, mul = {0, 0, 0}, sqrt = {0, 0, 0};
+    uint32_t x = 0xB16B00B5u;
+    for (int i = 0; i < 8192; i++) {
+        x = xs32(x);
+        uint64_t used;
+        PERF_CALL(used, (void) m->from_f32(x));
+        note(&f32, used, x, 0);
+    }
+    for (int i = 0; i < 256; i++) {
+        for (int j = 0; j < 256; j++) {
+            uint64_t used;
+            PERF_CALL(used, (void) m->mul(bf16_pts[i], bf16_pts[j]));
+            note(&mul, used, bf16_pts[i], bf16_pts[j]);
+        }
+    }
+    for (uint32_t a = 0; a < 65536; a++) {
+        uint64_t used;
+        PERF_CALL(used, (void) m->sqrt((uint16_t) a));
+        note(&sqrt, used, a, 0);
+    }
+    int is_asm = m->mul == bf16_mul_asm;
+    unsigned b_f32 = is_asm ? BF16_F32_INSN_BUDGET : BF16_C_F32_INSN_BUDGET;
+    unsigned b_mul = is_asm ? BF16_MUL_INSN_BUDGET : BF16_C_MUL_INSN_BUDGET;
+    unsigned b_sqrt = is_asm ? BF16_SQRT_INSN_BUDGET : BF16_C_SQRT_INSN_BUDGET;
+    utest_printer("@@perf bf16 from_f32=%llu mul=%llu sqrt=%llu\n", f32.insns,
+                  mul.insns, sqrt.insns);
+    if (f32.insns > b_f32)
+        UTEST_FAILED(
+            "from_f32(0x%x) retired %llu instructions, the budget is %u\n",
+            f32.a, f32.insns, b_f32);
+    if (mul.insns > b_mul)
+        UTEST_FAILED(
+            "mul(0x%x, 0x%x) retired %llu instructions, the budget is %u\n",
+            mul.a, mul.b, mul.insns, b_mul);
+    if (sqrt.insns > b_sqrt)
+        UTEST_FAILED("sqrt(0x%x) retired %llu instructions, the budget is %u\n",
+                     sqrt.a, sqrt.insns, b_sqrt);
+    return TEST_PASS;
+}
+#endif
 
 static const struct impl c_impl = {bf16_from_f32, bf16_mul, bf16_sqrt};
 #ifdef __riscv
@@ -288,6 +360,9 @@ DUAL(sqrt_cases)
 DUAL(sqrt_all)
 DUAL(sqrt_laws)
 DUAL(sqrt_classes)
+#ifdef __riscv
+DUAL(perf)
+#endif
 
 #ifdef __riscv
 /* The assembly must equal the C version where the oracle has no opinion. */
@@ -318,6 +393,9 @@ void bf16_register_tests(void)
     REG(sqrt_all);
     REG(sqrt_laws);
     REG(sqrt_classes);
+#ifdef __riscv
+    REG(perf);
+#endif
 #ifdef __riscv
     register_test(asm_matches_c, NULL, NULL, "bf16_asm_matches_c");
 #endif

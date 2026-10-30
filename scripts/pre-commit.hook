@@ -46,7 +46,7 @@ report_result() {
 # Build unmatched suppressions for each *.c file.
 cppcheck_build_unmatched() {
   local file suppression=""
-  for file in src/*/*.c tests/*.c common/*.c; do
+  for file in src/*/*.c tests/*.c common/*.c tools/*.c; do
     [ -f "$file" ] && suppression+=" --suppress=unmatchedSuppression:$file"
   done
   echo "$suppression"
@@ -181,7 +181,7 @@ if [ ${#FILES[@]} -eq 0 ]; then
   exit 0
 fi
 
-# === CHECK 1: Workspace path validation ===
+# CHECK 1: Workspace path validation
 update_progress "Checking workspace path"
 if echo "$workspace" | LC_ALL=C grep -q "[一-龥]"; then
   report_result 1 "Workspace path contains non-ASCII characters"
@@ -190,7 +190,7 @@ else
   report_result 0
 fi
 
-# === CHECK 2: Merge conflict markers ===
+# CHECK 2: Merge conflict markers
 update_progress "Checking for merge conflicts"
 CONFLICT_MARKERS=$(printf '%s|%s|%s' "<<<<<<<" "=======" ">>>>>>>")
 CONFLICT_FILES=$(git diff --cached --name-only -G "${CONFLICT_MARKERS}" | \
@@ -202,7 +202,7 @@ else
   report_result 0
 fi
 
-# === CHECK 3: Binary files ===
+# CHECK 3: Binary files
 update_progress "Checking for binary files"
 binary_files=()
 for file in "${FILES[@]}"; do
@@ -220,7 +220,7 @@ else
   report_result 0
 fi
 
-# === CHECK 4: Host tests under AddressSanitizer and UBSan ===
+# CHECK 4: Host tests under AddressSanitizer and UBSan
 update_progress "Running sanitizer tests"
 if echo "$FILES_ALL" | grep -qE '^(src|tests|common)/.*\.(c|h)$'; then
   if make sanitize >/dev/null 2>&1; then
@@ -233,7 +233,7 @@ else
   report_result 0
 fi
 
-# === CHECK 5: Code formatting ===
+# CHECK 5: Code formatting
 update_progress "Checking code formatting"
 C_FILES=$(git diff --cached --name-only --diff-filter=ACMR | grep -E "\.(c|cpp|h|hpp)$" || true)
 formatting_errors=0
@@ -265,7 +265,7 @@ else
   report_result 0
 fi
 
-# === CHECK 6: Unsafe functions ===
+# CHECK 6: Unsafe functions
 update_progress "Checking for unsafe functions"
 unsafe_found=0
 if [ -n "$C_FILES" ]; then
@@ -288,7 +288,7 @@ else
   report_result 0
 fi
 
-# === CHECK 7: Static analysis ===
+# CHECK 7: Static analysis
 update_progress "Running static analysis"
 if [ -n "$C_FILES" ]; then
   cppcheck_errors=0
@@ -309,7 +309,7 @@ else
   report_result 0
 fi
 
-# === CHECK 8: Non-ASCII filenames ===
+# CHECK 8: Non-ASCII filenames
 update_progress "Checking filenames"
 if test $(git diff --cached --name-only --diff-filter=A -z | \
           LC_ALL=C tr -d '[ -~]\0' | wc -c) != 0; then

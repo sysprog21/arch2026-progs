@@ -1,7 +1,6 @@
 #pragma once
 
-/*
- * micro-test: a small unit-test framework for hosted and bare-metal C.
+/* micro-test: a small unit-test framework for hosted and bare-metal C.
  *
  * It has no libc dependency. A test is an int function that returns TEST_PASS
  * or, through an assertion, TEST_FAIL. Register tests, then run them:
@@ -11,8 +10,8 @@
  *   return run_tests();             // 0 when every test passed, 1 otherwise
  *
  * Output goes through utest_printer, a printf-like function pointer. The
- * default is printf on a hosted build and bm_printf (common/print.c) on
- * RISC-V; assign another one before the first register_test() to redirect it.
+ * default is printf on a hosted build and bm_printf (common/print.c) on RISC-V;
+ * assign another one before the first register_test() to redirect it.
  *
  * Limits: UTEST_MAX_TESTS registrations (further ones are rejected with a
  * message), names of at most UTEST_NAME_SIZE - 1 characters (longer ones are

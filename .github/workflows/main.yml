@@ -1,48 +1,192 @@
 name: CI
 
-on: [push, pull_request]
+# A branch push runs the checks once. A pull request from a branch of the same
+# repository is skipped (its push run covers the same commit); a pull request
+# from a fork runs, because no push event reaches this repository for it.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+# Newer pushes cancel older runs, except on main: every graded commit keeps its
+# result.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   XPACK_GCC: 15.2.0-1
 
 jobs:
-  grade:
+  # Source hygiene needs neither the cross toolchain nor the emulator.
+  lint:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
     - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - name: newline
+      run: .ci/newline.sh
+    - name: unit tests of the scripts
+      run: make unittest
+    - name: clang-format 20
+      run: |
+        pipx install clang-format==20.1.8
+        CLANG_FORMAT=clang-format .ci/format.sh
+
+  # The hash chain of Change-Ids needs the whole history, and a pull request
+  # must be checked as its own head, not as the merge commit GitHub makes.
+  chain:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        ref: ${{ github.event.pull_request.head.sha || github.sha }}
+        persist-credentials: false
+    # The submission must not be the judge of its own history: verify the chain
+    # with the scripts of the instructor's repository first. A missing verifier
+    # is a failure, never a reason to skip.
+    - uses: actions/checkout@v4
+      with:
+        repository: sysprog21/arch2026-progs
+        ref: main
+        path: .trusted
+        persist-credentials: false
+    - name: hash chain, instructor's scripts
+      run: |
+        for f in scripts/chain.sh scripts/common.sh tools/hashchain.c; do
+          test -f ".trusted/$f" || {
+            echo "::error::sysprog21/arch2026-progs main has no $f; the instructor's verifier is not published"
+            exit 1
+          }
+        done
+        # Stay in the submission root: the verifier checks its history.
+        env -u CHAIN_BASE -u CHAIN_TOOL CC=/usr/bin/cc bash .trusted/scripts/chain.sh verify
+    - name: hash chain, submission's scripts
+      run: scripts/chain.sh verify
+    # The self-test takes about a minute. It exercises the verifier, so it runs
+    # only when the submission changed scripts/ or tools/.
+    - name: self-test of an edited verifier
+      run: |
+        if diff -rq .trusted/scripts scripts >/dev/null &&
+           diff -rq .trusted/tools tools >/dev/null; then
+          echo "scripts/ and tools/ match the instructor's: self-test skipped"
+        else
+          make chaintest
+        fi
+
+  # The grade: host tests under sanitizers, then the RV32I build and the
+  # micro-test suites on rv32emu at all four levels. The harness (tests,
+  # budgets, vectors, scripts, Makefile) is the instructor's, from main; only
+  # src/<prog>/ comes from the submission, so editing a test or a budget in a
+  # fork changes nothing. The emulator is built from the instructor's rules too.
+  grade:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+    - uses: actions/checkout@v4
+      with:
+        repository: sysprog21/arch2026-progs
+        ref: main
+        path: .trusted
+        persist-credentials: false
+    - name: instructor's harness is published
+      run: |
+        for f in scripts/grade.sh scripts/driver.py tests/tgcd.c src/rubik/rubik.h; do
+          test -f ".trusted/$f" || {
+            echo "::error::sysprog21/arch2026-progs main has no $f; the instructor's harness is not published"
+            exit 1
+          }
+        done
     - name: install-dependencies
       run: |
         sudo apt-get update
-        sudo apt-get -q -y install build-essential cppcheck device-tree-compiler \
-            python3-matplotlib libsdl2-dev
-        url=https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases/download/v${XPACK_GCC}/xpack-riscv-none-elf-gcc-${XPACK_GCC}-linux-x64.tar.gz
-        curl -fsSL "$url" | tar -xz -C "$RUNNER_TEMP"
-        echo "$RUNNER_TEMP/xpack-riscv-none-elf-gcc-${XPACK_GCC}/bin" >> "$GITHUB_PATH"
-    - name: toolchain
-      run: make toolchain
-    - name: make
-      run: make
-    - name: sanitizers
-      run: make sanitize
-    - name: make test
-      run: make test
-    - name: cycle analysis
-      run: make cycles
+        sudo apt-get -q -y install --no-install-recommends build-essential \
+            device-tree-compiler python3-matplotlib
+    # The caches are saved right after their build: a plain cache step saves
+    # only when the whole job passes, and the skeleton fails grading by design.
+    - name: restore the cross toolchain
+      id: xpack
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ runner.temp }}/xpack-riscv-none-elf-gcc-${{ env.XPACK_GCC }}
+        key: xpack-${{ runner.os }}-${{ runner.arch }}-${{ env.XPACK_GCC }}
+    - name: download the cross toolchain
+      if: steps.xpack.outputs.cache-hit != 'true'
+      run: |
+        name=xpack-riscv-none-elf-gcc-${XPACK_GCC}-linux-x64.tar.gz
+        url=https://github.com/xpack-dev-tools/riscv-none-elf-gcc-xpack/releases/download/v${XPACK_GCC}
+        cd "$RUNNER_TEMP"
+        curl --fail --location --retry 3 -O "$url/$name" -O "$url/$name.sha"
+        sha256sum -c "$name.sha"
+        tar -xzf "$name"
+    - name: save the cross toolchain
+      if: steps.xpack.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ${{ runner.temp }}/xpack-riscv-none-elf-gcc-${{ env.XPACK_GCC }}
+        key: ${{ steps.xpack.outputs.cache-primary-key }}
+    - run: echo "$RUNNER_TEMP/xpack-riscv-none-elf-gcc-${XPACK_GCC}/bin" >> "$GITHUB_PATH"
+    # rv32emu is always the latest upstream commit; the cache is keyed on it,
+    # so a new upstream commit is a miss and a rebuild, never a stale hit.
+    - name: resolve the latest rv32emu
+      id: emu
+      run: |
+        sha=$(make -C .trusted -s emu-rev)
+        [[ $sha =~ ^[0-9a-f]{40}$ ]]
+        echo "sha=$sha" >> "$GITHUB_OUTPUT"
+    - name: restore rv32emu
+      id: emu-cache
+      uses: actions/cache/restore@v4
+      with:
+        path: .trusted/third_party/rv32emu
+        key: rv32emu-${{ runner.os }}-${{ runner.arch }}-${{ steps.emu.outputs.sha }}-${{ hashFiles('.trusted/mk/rv32emu.mk') }}
+    - name: build rv32emu
+      if: steps.emu-cache.outputs.cache-hit != 'true'
+      run: |
+        rm -rf .trusted/third_party/rv32emu
+        make -C .trusted deps RV32EMU_REV=${{ steps.emu.outputs.sha }}
+    - name: save rv32emu
+      if: steps.emu-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: .trusted/third_party/rv32emu
+        key: ${{ steps.emu-cache.outputs.cache-primary-key }}
+    - name: grade
+      run: |
+        .trusted/scripts/grade.sh --submission . --out results
+    - name: cycle charts exist
+      if: ${{ !cancelled() }}
+      run: |
+        for chart in cycles-per-call speedup footprint; do
+          test -s "results/$chart.png"
+        done
     - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
       with:
         name: cycles
         path: results/
 
-  coding-style:
+  # One result to read, and to require in a branch protection rule. A skipped
+  # job (a same-repository pull request) counts as passed.
+  ci:
+    if: ${{ always() }}
+    needs: [lint, chain, grade]
     runs-on: ubuntu-24.04
+    timeout-minutes: 2
     steps:
-    - uses: actions/checkout@v4
-    - name: coding convention
-      run: |
-        wget -q https://apt.llvm.org/llvm.sh
-        chmod +x llvm.sh
-        sudo ./llvm.sh 20
-        sudo apt-get install -q -y clang-format-20
-        .ci/newline.sh
-        .ci/format.sh
-      shell: bash
+    - run: |
+        echo '${{ toJSON(needs) }}'
+        ! echo '${{ join(needs.*.result, ' ') }}' | grep -Eq 'failure|cancelled'

@@ -20,8 +20,7 @@ static const uint32_t op1_cases[72] = {
 };
 #define OP1_NCASES 18
 
-/* 64 operands; the grid adds every pair, hashing (sum, passes), one hash per
- * row */
+/* 64 operands; the grid adds every pair, one hash of (sum, passes) per row */
 static const uint32_t op_pts[64] = {
     0x00000000, 0x00000001, 0x00000002, 0x00000003, 0x0000007F, 0x00000080,
     0x000000FF, 0x00000100, 0x0000FFFF, 0x00010000, 0x7FFFFFFF, 0x80000000,
@@ -49,8 +48,7 @@ static const uint32_t op1_row_hash[64] = {
     0xA24E8DBC, 0xBDADF2A9, 0x3EE42B27, 0x84FCA7F0,
 };
 
-/* 1024 pairs from xs32(seed 0x0DDBA11); 8 hashes of (sum, passes) over blocks
- * of 128 */
+/* 1024 pairs from xs32 (seed 0x0DDBA11): 8 hashes over blocks of 128 */
 static const uint32_t op1_rnd_hash[8] = {
     0x0E1D323C, 0x5960A2FF, 0xE013EBBA, 0xF056F855,
     0xDA4F1B70, 0xF3EFBCFC, 0xF9907403, 0xE90D5A5C,

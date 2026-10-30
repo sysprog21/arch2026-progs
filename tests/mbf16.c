@@ -1,6 +1,6 @@
 #include "bench.h"
-#include "bf16.h"
 #include "print.h"
+#include "src/bf16/bf16.h"
 #include "tests.h"
 #include "utest.h"
 

@@ -20,7 +20,7 @@ declare -F set_colors >/dev/null 2>&1 || { echo "[!] '$common_script' does not d
 set_colors
 
 # Base commit from which to start checking.
-BASE_COMMIT="0c41d273e6767f97f6c430612475a9f95bed9f6f"
+BASE_COMMIT="$("$(dirname "$0")/chain.sh" base)"
 
 # Get a list of non-merge commit hashes after BASE_COMMIT.
 commits=$(git rev-list --no-merges "${BASE_COMMIT}"..HEAD)
@@ -102,8 +102,8 @@ for commit in "${!commit_cache[@]}"; do
     ((failed++))
   fi
 
-  # Check 2: Bypass indicators - only for actual WIP commits
-  # Skip commits that are documenting features (like this commit checker itself)
+  # Check 2: Bypass indicators - only for actual WIP commits Skip commits that
+  # are documenting features (like this commit checker itself)
   if [[ "$subject" =~ ^WIP[[:space:]]*: ]] || [[ "$subject" =~ ^wip[[:space:]]*: ]]; then
     has_warnings=1
     warning_list+="Work in progress commit|"

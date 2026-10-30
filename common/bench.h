@@ -3,9 +3,8 @@
 #include <stdint.h>
 #include "print.h"
 
-/*
- * Cycle accounting for rv32emu. The emulator has no timing model, so cycle
- * and instret are one counter that counts executed guest instructions.
+/* Cycle accounting for rv32emu. The emulator has no timing model, so cycle and
+ * instret are one counter that counts executed guest instructions.
  *
  * Every benchmark line has a fixed format that scripts/cycles.py parses:
  *
@@ -13,10 +12,10 @@
  *           cycles=<total> instret=<total> overhead=<loop cycles>
  *           overhead_instret=<loop instret> checksum=<sum of results>
  *
- * cycles and instret cover the timed loop of n calls. overhead is the same
- * loop with the call replaced by a copy of its input: counter reads, loop
- * control, checksum and input load. The analysis subtracts it, so the
- * reported per-call cost is that of the measured function alone.
+ * cycles and instret cover the timed loop of n calls. overhead is the same loop
+ * with the call replaced by a copy of its input: counter reads, loop control,
+ * checksum and input load. The analysis subtracts it, so the reported per-call
+ * cost is that of the measured function alone.
  */
 uint64_t get_cycles(void);
 uint64_t get_instret(void);
@@ -54,8 +53,7 @@ static inline void bench_report(const char *prog,
         overhead.cycles, overhead.instret, checksum);
 }
 
-/*
- * BENCH(prog, fn, impl, inputs, n, call): run `call` once per element of
+/* BENCH(prog, fn, impl, inputs, n, call): run `call` once per element of
  * `inputs` (a uint32_t array of n values; the element is named `in` inside
  * `call`), fold each result into a checksum, and report. A call that takes two
  * operands derives the second from `in` itself.

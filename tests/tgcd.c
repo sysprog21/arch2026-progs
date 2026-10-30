@@ -1,6 +1,7 @@
 #include <stddef.h>
-#include "gcd.h"
 #include "gcdvec.h"
+#include "src/gcd/gcd.h"
+#include "tperf.h"
 #include "tutil.h"
 #include "utest.h"
 
@@ -8,7 +9,8 @@ typedef uint32_t (*gcd_fn)(uint32_t, uint32_t);
 
 /* Directed cases: zeros, equal operands, powers of two, coprime and shared
  * factors, 32-bit extremes, consecutive Fibonacci numbers (Euclid's worst
- * case). Expected values come from the instructor's oracle. */
+ * case). Expected values come from the instructor's oracle.
+ */
 static int check_cases(gcd_fn gcd)
 {
     for (int i = 0; i < GCD_NCASES; i++) {
@@ -65,8 +67,9 @@ static int check_powers_of_two(gcd_fn gcd)
     return TEST_PASS;
 }
 
-/* Factors of two are stripped from both operands and restored once:
- * gcd(u << i, v << j) = gcd(u, v) << min(i, j) for odd u and v. */
+/* Factors of two are stripped from both operands and restored once: gcd(u << i,
+ * v << j) = gcd(u, v) << min(i, j) for odd u and v.
+ */
 static int check_shared_twos(gcd_fn gcd)
 {
     uint32_t x = 0x2468ACE1u;
@@ -83,7 +86,8 @@ static int check_shared_twos(gcd_fn gcd)
 }
 
 /* Random operands of random bit length against Euclid, plus the algebra:
- * symmetry, g divides both, and the cofactors are coprime. */
+ * symmetry, g divides both, and the cofactors are coprime.
+ */
 static int check_random(gcd_fn gcd)
 {
     uint32_t x = 0xDEADBEEFu;
@@ -107,7 +111,8 @@ static int check_random(gcd_fn gcd)
 }
 
 /* gcd(F(n), F(m)) = F(gcd(n, m)) for every n, m up to F(47), the largest
- * Fibonacci number below 2^32. Consecutive terms are Euclid's worst case. */
+ * Fibonacci number below 2^32. Consecutive terms are Euclid's worst case.
+ */
 static int check_fibonacci(gcd_fn gcd)
 {
     uint32_t f[48];
@@ -122,6 +127,56 @@ static int check_fibonacci(gcd_fn gcd)
     }
     return TEST_PASS;
 }
+
+#ifdef __riscv
+/* Worst cases for the binary algorithm and for Euclid's: extreme operands, a
+ * wide gap in size, consecutive Fibonacci numbers, and random pairs. The most
+ * expensive call has to fit the budget; the figure is printed for tuning.
+ */
+static int check_perf(gcd_fn gcd)
+{
+    static const uint32_t hard[][2] = {
+        {0xFFFFFFFFu, 1},           {1, 0xFFFFFFFFu},
+        {0x80000000u, 1},           {0x80000000u, 0x7FFFFFFFu},
+        {0xFFFFFFFFu, 0xFFFFFFFEu}, {2971215073u, 1836311903u},
+        {1836311903u, 1134903170u}, {0xFFFFFFFFu, 0xFFFFu},
+        {0xDEADBEEFu, 0xCAFEBABEu}, {0x7FFFFFFFu, 0x40000000u},
+        {0xAAAAAAAAu, 0x55555555u}, {0x00010001u, 0xFFFF0000u},
+    };
+    uint64_t worst = 0;
+    uint32_t worst_a = 0, worst_b = 0;
+    uint32_t x = 0xFEEDF00Du;
+    for (int i = 0; i < 12 + 256; i++) {
+        uint32_t a, b;
+        if (i < 12) {
+            a = hard[i][0];
+            b = hard[i][1];
+        } else {
+            x = xs32(x);
+            a = x;
+            x = xs32(x);
+            b = x;
+        }
+        uint32_t g;
+        uint64_t used;
+        PERF_CALL(used, g = gcd(a, b));
+        ASSERT_UNSIGNED_EQ(g, ref_gcd(a, b));
+        if (used > worst) {
+            worst = used;
+            worst_a = a;
+            worst_b = b;
+        }
+    }
+    unsigned budget = gcd == gcd_u32_asm ? GCD_INSN_BUDGET : GCD_C_INSN_BUDGET;
+    utest_printer("@@perf gcd worst=%llu budget=%u at (%u, %u)\n", worst,
+                  budget, worst_a, worst_b);
+    if (worst > budget)
+        UTEST_FAILED(
+            "gcd(%u, %u) retired %llu instructions, the budget is %u\n",
+            worst_a, worst_b, worst, budget);
+    return TEST_PASS;
+}
+#endif
 
 #define DUAL(name)                    \
     static int name##_c(void)         \
@@ -153,6 +208,9 @@ DUAL(powers_of_two)
 DUAL(shared_twos)
 DUAL(random)
 DUAL(fibonacci)
+#ifdef __riscv
+DUAL(perf)
+#endif
 
 #ifdef __riscv
 /* The assembly must equal the C version on operands neither one has seen. */
@@ -179,6 +237,9 @@ void gcd_register_tests(void)
     REG(shared_twos);
     REG(random);
     REG(fibonacci);
+#ifdef __riscv
+    REG(perf);
+#endif
 #ifdef __riscv
     register_test(asm_matches_c, NULL, NULL, "gcd_asm_matches_c");
 #endif

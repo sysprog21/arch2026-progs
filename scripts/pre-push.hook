@@ -52,8 +52,8 @@ run_build_checks() {
 
   printf " [ ${GREEN}OK${NC} ]\n"
 
-  # Additional checks could be added here
-  # For example: basic tests, format checks, etc.
+  # Additional checks could be added here For example: basic tests, format
+  # checks, etc.
 
   return 0
 }
@@ -61,6 +61,13 @@ run_build_checks() {
 # Main execution
 main() {
   show_hints
+
+  # Every push needs a history that continues the hash chain of Change-Ids.
+  local local_ref local_oid remote_ref remote_oid
+  while read -r local_ref local_oid remote_ref remote_oid; do
+    [[ "$local_oid" =~ ^0+$ ]] && continue
+    "$(dirname "$0")/../../scripts/chain.sh" verify "$local_oid" || exit 1
+  done
 
   # Check if pushing to protected branch
   if [ "$current_branch" = "$protected_branch" ]; then

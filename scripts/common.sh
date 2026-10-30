@@ -28,14 +28,14 @@ check_github_actions() {
   fi
 }
 
-# Usage: FORMAT [ARGUMENTS...]
-# Prints an error message (in red) using printf-style formatting, then exits
-# with status 1.
+# Usage: FORMAT [ARGUMENTS...] Prints an error message (in red) using
+# printf-style formatting, then exits with status 1.
 throw() {
   local fmt="$1"
   shift
-  # We prepend "[!]" in red, then apply the format string and arguments,
-  # finally reset color.
+
+  # We prepend "[!]" in red, then apply the format string and arguments, finally
+  # reset color.
   printf "\n${RED}[!] $fmt${NC}\n" "$@" >&2
   exit 1
 }

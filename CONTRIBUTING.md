@@ -942,6 +942,12 @@ In addition, this project expects contributors to follow these additional rules:
   These formats waste precious characters from the 50-character limit.
   Write a direct, descriptive subject instead.
 
+Every commit message carries a `Change-Id:` trailer that the `commit-msg` hook adds. It is a link of a hash chain
+over the commit history, not a random value: do not edit it, and do not commit with `--no-verify`. The history must
+stay linear: rebase onto the upstream branch (`git pull --rebase`) instead of merging, and do not commit through the
+GitHub web editor. Where the sections above say to merge a branch, rebase it. See "Commit history" in `README.md` for
+how the chain is checked and repaired.
+
 Some conventions are automatically enforced by the [githooks](https://git-scm.com/docs/githooks).
 
 ## References

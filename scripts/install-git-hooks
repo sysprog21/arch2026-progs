@@ -10,7 +10,7 @@ declare -F set_colors >/dev/null 2>&1 || { echo "[!] '$common_script' does not d
 
 set_colors
 
-TOTAL_STEPS=2
+TOTAL_STEPS=3
 CURRENT_STEP=0
 
 # 1. Validate the workspace
@@ -27,7 +27,81 @@ if [ ! -d "$workspace" ]; then
 This directory $workspace does not appear to be a valid Git repository."
 fi
 
-# 2. Install Git hooks
+# 2. Enable GitHub Actions when this repository is not the instructor's one.
+((CURRENT_STEP++))
+progress "$CURRENT_STEP" "$TOTAL_STEPS"
+
+UPSTREAM="sysprog21/arch2026-progs"
+
+# GitHub disables the workflows of a new fork, and a regression then goes
+# unnoticed: the failure e-mails the course relies on are never sent. A fork
+# therefore needs the GitHub CLI, both to confirm what it is and to switch the
+# workflows on. The step is skipped inside GitHub Actions itself.
+enable_actions() {
+  local url owner repo slug info is_fork parent branch id workflows
+  url=$(git config --get remote.origin.url)
+  if [ -z "$url" ]; then
+    echo -e "${YELLOW}No 'origin' remote: skipping the GitHub Actions check.${NC}"
+    return 0
+  fi
+
+  # Accept https://host/owner/repo(.git)(/), ssh://git@host(:port)/owner/repo
+  # and git@host:owner/repo.
+  url=${url%/}
+  url=${url%.git}
+  repo=${url##*/}
+  owner=${url%/*}
+  owner=${owner##*/}
+  owner=${owner##*:}
+  slug="$owner/$repo"
+
+  if [ "$(echo "$slug" | tr 'A-Z' 'a-z')" = "$UPSTREAM" ]; then
+    return 0
+  fi
+
+  if ! command -v gh >/dev/null 2>&1; then
+    throw "The GitHub CLI 'gh' is required for a fork, to enable GitHub Actions.\n\
+Install it from https://cli.github.com, run 'gh auth login', then execute 'make' again."
+  fi
+  if ! gh auth status >/dev/null 2>&1; then
+    throw "The GitHub CLI is not logged in. Run 'gh auth login', then execute 'make' again."
+  fi
+
+  info=$(gh repo view "$slug" --json isFork,parent,defaultBranchRef \
+           --jq '[.isFork, (.parent.owner.login + "/" + .parent.name), .defaultBranchRef.name] | @tsv' 2>&1) ||
+    throw "Cannot read $slug with gh:\n%s" "$info"
+  IFS=$'\t' read -r is_fork parent branch <<< "$info"
+  if [ "$is_fork" != "true" ] || [ "$(echo "$parent" | tr 'A-Z' 'a-z')" != "$UPSTREAM" ]; then
+    throw "Your repository MUST be a fork of $UPSTREAM, but $slug is not.\n\
+Fork it on GitHub, then clone your fork."
+  fi
+  if [ "$branch" != "main" ]; then
+    echo -e "${YELLOW}The default branch of $slug is '$branch'; the course grades 'main'.${NC}"
+    echo -e "${YELLOW}Change it: gh repo edit $slug --default-branch main${NC}"
+  fi
+
+  # Allow Actions for the repository, then enable every workflow that is off. A
+  # workflow that GitHub reports as deleted is not a problem; a failed request
+  # is, so the hooks stay uninstalled and the next make tries again.
+  gh api -X PUT "repos/$slug/actions/permissions" -F enabled=true -f allowed_actions=all \
+    >/dev/null 2>&1 || true
+  [ "$(gh api "repos/$slug/actions/permissions" --jq .enabled 2>/dev/null)" = "true" ] ||
+    throw "GitHub Actions is not enabled for %s and gh cannot enable it.\nEnable it at https://github.com/%s/settings/actions, then execute 'make' again." "$slug" "$slug"
+  workflows=$(gh api "repos/$slug/actions/workflows" \
+                --jq '.workflows[] | select(.state | startswith("disabled")) | .id') ||
+    throw "Cannot list the workflows of %s with gh. Check your network and 'gh auth status', then execute 'make' again." "$slug"
+  for id in $workflows; do
+    gh workflow enable "$id" -R "$slug" >/dev/null ||
+      throw "Cannot enable workflow %s of %s. Enable it at https://github.com/%s/actions" "$id" "$slug" "$slug"
+  done
+  echo -e "${GREEN}GitHub Actions is enabled for $slug.${NC}"
+}
+
+if [ -z "$GITHUB_ACTIONS" ]; then
+  enable_actions
+fi
+
+# 3. Install Git hooks
 ((CURRENT_STEP++))
 progress "$CURRENT_STEP" "$TOTAL_STEPS"
 
@@ -35,12 +109,15 @@ HOOKS_DIR=".git/hooks"
 mkdir -p "$HOOKS_DIR" || exit 1
 
 # List of hook names.
-HOOKS=(pre-commit commit-msg pre-push prepare-commit-msg)
+HOOKS=(pre-commit commit-msg post-commit pre-push prepare-commit-msg)
 
 for hook in "${HOOKS[@]}"; do
   ln -sf "../../scripts/${hook}.hook" "$HOOKS_DIR/$hook" || exit 1
   chmod +x "$HOOKS_DIR/$hook"
 done
+
+# A plain git pull would merge upstream commits; the history must stay linear.
+git config pull.rebase true
 
 touch .git/hooks/applied || exit 1
 

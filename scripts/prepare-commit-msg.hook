@@ -34,7 +34,8 @@ INLINE_MSG=$(cat <<'EOF'
 EOF
 )
 
-# Write an empty line, the guidelines, and the changed files into the commit message.
+# Write an empty line, the guidelines, and the changed files into the commit
+# message.
 {
   echo
   echo "$INLINE_MSG"

@@ -1,15 +1,15 @@
 #include <stddef.h>
-#include "rubik.h"
 #include "rubikvec.h"
+#include "src/rubik/rubik.h"
+#include "tperf.h"
 #include "tutil.h"
 #include "utest.h"
 
 typedef int (*solve_fn)(const char *, char *, size_t);
 
-/*
- * The cube model of sysprog21/minirubik solver.c, written out again here so
- * the checks never trust the solver: each destination cubie takes the cubie
- * and the twist of source[face][destination].
+/* The cube model of sysprog21/minirubik solver.c, written out again here so the
+ * checks never trust the solver: each destination cubie takes the cubie and the
+ * twist of source[face][destination].
  */
 enum { CUBIES = 7 };
 
@@ -40,8 +40,9 @@ static struct cube parse(const char *s)
     return c;
 }
 
-/* No division in the tests: the face and the turn count of each move, and
- * the orientation sum modulo 3 (at most 2 + 2), come from tables. */
+/* No division in the tests: the face and the turn count of each move, and the
+ * orientation sum modulo 3 (at most 2 + 2), come from tables.
+ */
 static const uint8_t face_of[9] = {0, 0, 0, 1, 1, 1, 2, 2, 2};
 static const uint8_t turns_of[9] = {1, 2, 3, 1, 2, 3, 1, 2, 3};
 static const uint8_t mod3[5] = {0, 1, 2, 0, 1};
@@ -83,18 +84,31 @@ static int token(const char *s, size_t len)
     return -1;
 }
 
-/*
- * Solve `state`, then check the text: single-space separated valid tokens, no
+/* Solve `state`, then check the text: single-space separated valid tokens, no
  * leading or trailing space, as many tokens as the return value, and applying
- * them reaches the solved cube. Returns the number of moves, or a negative
- * value after printing the reason.
+ * them reaches the solved cube.
+ *
+ * Returns the number of moves, or a negative value after printing the reason.
  */
 static int solve_and_verify(solve_fn solve, const char *state, int *moves_out)
 {
     char out[96];
     for (size_t i = 0; i < sizeof out; i++)
         out[i] = '#';
+#ifdef __riscv
+    uint64_t used;
+    int n;
+    PERF_CALL(used, n = solve(state, out, sizeof out));
+#else
     int n = solve(state, out, sizeof out);
+#endif
+#ifdef __riscv
+    unsigned budget =
+        solve == rubik_solve_asm ? RUBIK_INSN_BUDGET : RUBIK_C_INSN_BUDGET;
+    if (used > budget)
+        UTEST_FAILED("solve(%s) retired %llu instructions, the budget is %u\n",
+                     state, used, budget);
+#endif
     if (n < 0)
         UTEST_FAILED("solve(%s) returned %d\n", state, n);
     struct cube c = parse(state);
@@ -126,19 +140,26 @@ static int solve_and_verify(solve_fn solve, const char *state, int *moves_out)
     return TEST_PASS;
 }
 
-/* Every vector: the solution solves the cube and its length is the exact
- * distance, from depth 0 to the diameter 11. */
-static int check_optimal(solve_fn solve)
+/* The vectors of one distance: each solution solves the cube, its length is the
+ * exact distance, and it is found within the instruction budget. The twelve
+ * depths are separate tests, so a slow solver shows where it gives up.
+ */
+static int check_depth(solve_fn solve, int depth)
 {
+    int seen = 0;
     for (size_t i = 0; i < RUBIK_NCASES; i++) {
+        if (rubik_cases[i].distance != depth)
+            continue;
         int n;
         int r = solve_and_verify(solve, rubik_cases[i].state, &n);
         if (r != TEST_PASS)
             return r;
-        if (n != rubik_cases[i].distance)
+        if (n != depth)
             UTEST_FAILED("solve(%s) used %d moves, the distance is %d\n",
-                         rubik_cases[i].state, n, rubik_cases[i].distance);
+                         rubik_cases[i].state, n, depth);
+        seen++;
     }
+    ASSERT_TRUE(seen > 0);
     return TEST_PASS;
 }
 
@@ -154,7 +175,8 @@ static int check_solved(solve_fn solve)
 }
 
 /* Each of the nine moves applied to the solved cube is exactly one move from
- * solved: the state after R is solved by R', and so on. */
+ * solved: the state after R is solved by R', and so on.
+ */
 static int check_single_moves(solve_fn solve)
 {
     for (int m = 0; m < 9; m++) {
@@ -174,8 +196,9 @@ static int check_single_moves(solve_fn solve)
     return TEST_PASS;
 }
 
-/* Follow an 11-move solution: after its first move the cube is at distance
- * 10, then 9, down to 0, so the solver is consistent with itself. */
+/* Follow an 11-move solution: after its first move the cube is at distance 10,
+ * then 9, down to 0, so the solver is consistent with itself.
+ */
 static int check_chain(solve_fn solve)
 {
     char state[RUBIK_STATE_LEN + 1] = "21345671111111";
@@ -200,7 +223,8 @@ static int check_chain(solve_fn solve)
 }
 
 /* Rejection paths: wrong length, digit out of range, repeated cubie, bad
- * orientation sum, trailing garbage. The output buffer stays untouched. */
+ * orientation sum, trailing garbage. The output buffer stays untouched.
+ */
 static int check_invalid(solve_fn solve)
 {
     for (size_t i = 0; i < RUBIK_NINVALID; i++) {
@@ -215,7 +239,8 @@ static int check_invalid(solve_fn solve)
 }
 
 /* A buffer one byte short fails with -2 and an empty string, the exact size
- * succeeds, and a zero-length buffer is never written. */
+ * succeeds, and a zero-length buffer is never written.
+ */
 static int check_small_buffer(solve_fn solve)
 {
     const char *state = "21345671111111";
@@ -269,7 +294,44 @@ static int check_small_buffer(solve_fn solve)
 #define REG(name) register_test(name##_c, NULL, NULL, "rubik_c_" #name)
 #endif
 
-DUAL(optimal)
+/* One test per distance, for the C and the assembly version. */
+#ifdef __riscv
+#define DEPTH(d)                                \
+    static int depth##d##_c(void)               \
+    {                                           \
+        return check_depth(rubik_solve, d);     \
+    }                                           \
+    static int depth##d##_asm(void)             \
+    {                                           \
+        return check_depth(rubik_solve_asm, d); \
+    }
+#define REG_DEPTH(d)                                                     \
+    do {                                                                 \
+        register_test(depth##d##_c, NULL, NULL, "rubik_c_depth" #d);     \
+        register_test(depth##d##_asm, NULL, NULL, "rubik_asm_depth" #d); \
+    } while (0)
+#else
+#define DEPTH(d)                            \
+    static int depth##d##_c(void)           \
+    {                                       \
+        return check_depth(rubik_solve, d); \
+    }
+#define REG_DEPTH(d) register_test(depth##d##_c, NULL, NULL, "rubik_c_depth" #d)
+#endif
+
+DEPTH(0)
+DEPTH(1)
+DEPTH(2)
+DEPTH(3)
+DEPTH(4)
+DEPTH(5)
+DEPTH(6)
+DEPTH(7)
+DEPTH(8)
+DEPTH(9)
+DEPTH(10)
+DEPTH(11)
+
 DUAL(solved)
 DUAL(single_moves)
 DUAL(chain)
@@ -292,7 +354,18 @@ static int asm_matches_c(void)
 
 void rubik_register_tests(void)
 {
-    REG(optimal);
+    REG_DEPTH(0);
+    REG_DEPTH(1);
+    REG_DEPTH(2);
+    REG_DEPTH(3);
+    REG_DEPTH(4);
+    REG_DEPTH(5);
+    REG_DEPTH(6);
+    REG_DEPTH(7);
+    REG_DEPTH(8);
+    REG_DEPTH(9);
+    REG_DEPTH(10);
+    REG_DEPTH(11);
     REG(solved);
     REG(single_moves);
     REG(chain);

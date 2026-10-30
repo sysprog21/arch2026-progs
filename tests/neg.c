@@ -2,8 +2,9 @@
 #include "print.h"
 #include "utest.h"
 
-/* Negative control: one passing and one deliberately failing test. The
- * failure must show in the output and in the value main returns. */
+/* Negative control: one passing and one deliberately failing test. The failure
+ * must show in the output and in the value main returns.
+ */
 static int test_passes(void)
 {
     ASSERT_EQ(1 + 1, 2);

@@ -1,6 +1,6 @@
 #include "bench.h"
-#include "gcd.h"
 #include "print.h"
+#include "src/gcd/gcd.h"
 #include "tests.h"
 #include "utest.h"
 

@@ -1,6 +1,7 @@
 #include <stddef.h>
-#include "fixed.h"
 #include "fixedvec.h"
+#include "src/fixed/fixed.h"
+#include "tperf.h"
 #include "tutil.h"
 #include "utest.h"
 
@@ -11,8 +12,7 @@ struct impl {
     int32_t (*q_mul)(int32_t, int32_t);
 };
 
-/*
- * Independent Q11.20 product: the exact signed 64-bit product from 16-bit
+/* Independent Q11.20 product: the exact signed 64-bit product from 16-bit
  * partial products of the magnitudes, plus 2^19, then a floor shift by 20,
  * truncated to 32 bits. It shares no step with the routine under test.
  */
@@ -28,7 +28,7 @@ static int32_t ref_qmul(int32_t a, int32_t b)
     return (int32_t) (p >> 20);
 }
 
-/* ---- op1: the bitwise adder ---- */
+/* op1: the bitwise adder */
 
 static int check_op1_cases(const struct impl *m)
 {
@@ -79,8 +79,9 @@ static int check_op1_random(const struct impl *m)
     return TEST_PASS;
 }
 
-/* The sum is a + b, the pass count is symmetric, zero only when b is zero
- * and never above 32; adding zero or a number to itself is predictable. */
+/* The sum is a + b, the pass count is symmetric, zero only when b is zero and
+ * never above 32; adding zero or a number to itself is predictable.
+ */
 static int check_op1_laws(const struct impl *m)
 {
     uint32_t x = 0xFACEFEEDu;
@@ -98,7 +99,7 @@ static int check_op1_laws(const struct impl *m)
     return TEST_PASS;
 }
 
-/* ---- op2: subtraction ---- */
+/* op2: subtraction */
 
 static int check_sub(const struct impl *m)
 {
@@ -126,7 +127,7 @@ static int check_sub(const struct impl *m)
     return TEST_PASS;
 }
 
-/* ---- op3: floor of the average without overflow ---- */
+/* op3: floor of the average without overflow */
 
 static int check_avg(const struct impl *m)
 {
@@ -159,10 +160,11 @@ static int check_avg(const struct impl *m)
     return TEST_PASS;
 }
 
-/* ---- q_mul ---- */
+/* q_mul */
 
 /* Rounding at ties, sign handling, saturating-looking corners that in fact
- * wrap: expected values come from the instructor's oracle. */
+ * wrap: expected values come from the instructor's oracle.
+ */
 static int check_qmul_cases(const struct impl *m)
 {
     for (int i = 0; i < QMUL_NCASES; i++) {
@@ -222,6 +224,78 @@ static int check_qmul_laws(const struct impl *m)
     return TEST_PASS;
 }
 
+#ifdef __riscv
+struct worst {
+    uint64_t insns;
+    uint32_t a, b;
+};
+
+static void note(struct worst *w, uint64_t used, uint32_t a, uint32_t b)
+{
+    if (used > w->insns) {
+        w->insns = used;
+        w->a = a;
+        w->b = b;
+    }
+}
+
+/* The most expensive call of each routine over the 64 x 64 grid and 4,096
+ * random pairs has to fit its budget. The figures are printed for tuning.
+ */
+static int check_perf(const struct impl *m)
+{
+    struct worst o1 = {0, 0, 0}, o2 = {0, 0, 0}, o3 = {0, 0, 0}, qm = {0, 0, 0};
+    uint32_t x = 0x9E3779B9u;
+    for (int k = 0; k < 64 * 64 + 4096; k++) {
+        uint32_t a, b;
+        if (k < 64 * 64) {
+            a = op_pts[k >> 6];
+            b = op_pts[k & 63];
+        } else {
+            x = xs32(x);
+            a = x;
+            x = xs32(x);
+            b = x;
+        }
+        int n;
+        uint64_t used;
+        PERF_CALL(used, (void) m->op1(a, b, &n));
+        note(&o1, used, a, b);
+        PERF_CALL(used, (void) m->op2(a, b));
+        note(&o2, used, a, b);
+        PERF_CALL(used, (void) m->op3(a, b));
+        note(&o3, used, a, b);
+        PERF_CALL(used, (void) m->q_mul((int32_t) a, (int32_t) b));
+        note(&qm, used, a, b);
+    }
+    int is_asm = m->q_mul == q_mul_asm;
+    unsigned b_op1 = is_asm ? FIXED_OP1_INSN_BUDGET : FIXED_C_OP1_INSN_BUDGET;
+    unsigned b_op2 = is_asm ? FIXED_OP2_INSN_BUDGET : FIXED_C_OP2_INSN_BUDGET;
+    unsigned b_op3 = is_asm ? FIXED_OP3_INSN_BUDGET : FIXED_C_OP3_INSN_BUDGET;
+    unsigned b_qmul =
+        is_asm ? FIXED_QMUL_INSN_BUDGET : FIXED_C_QMUL_INSN_BUDGET;
+    utest_printer("@@perf fixed op1=%llu op2=%llu op3=%llu q_mul=%llu\n",
+                  o1.insns, o2.insns, o3.insns, qm.insns);
+    if (o1.insns > b_op1)
+        UTEST_FAILED(
+            "op1(0x%x, 0x%x) retired %llu instructions, the budget is %u\n",
+            o1.a, o1.b, o1.insns, b_op1);
+    if (o2.insns > b_op2)
+        UTEST_FAILED(
+            "op2(0x%x, 0x%x) retired %llu instructions, the budget is %u\n",
+            o2.a, o2.b, o2.insns, b_op2);
+    if (o3.insns > b_op3)
+        UTEST_FAILED(
+            "op3(0x%x, 0x%x) retired %llu instructions, the budget is %u\n",
+            o3.a, o3.b, o3.insns, b_op3);
+    if (qm.insns > b_qmul)
+        UTEST_FAILED(
+            "q_mul(0x%x, 0x%x) retired %llu instructions, the budget is %u\n",
+            qm.a, qm.b, qm.insns, b_qmul);
+    return TEST_PASS;
+}
+#endif
+
 #define DUAL(name)                    \
     static int name##_c(void)         \
     {                                 \
@@ -256,6 +330,9 @@ DUAL(avg)
 DUAL(qmul_cases)
 DUAL(qmul_reference)
 DUAL(qmul_laws)
+#ifdef __riscv
+DUAL(perf)
+#endif
 
 #ifdef __riscv
 static int asm_matches_c(void)
@@ -289,6 +366,9 @@ void fixed_register_tests(void)
     REG(qmul_cases);
     REG(qmul_reference);
     REG(qmul_laws);
+#ifdef __riscv
+    REG(perf);
+#endif
 #ifdef __riscv
     register_test(asm_matches_c, NULL, NULL, "fixed_asm_matches_c");
 #endif

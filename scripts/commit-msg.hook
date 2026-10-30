@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
-# git-good-commit(1) - Git hook to help you write good commit messages.
-# Released under the MIT License.
+# git-good-commit(1) - Git hook to help you write good commit messages. Released
+# under the MIT License.
 #
 # https://github.com/tommarshall/git-good-commit
 
@@ -21,8 +21,8 @@ declare -F set_colors >/dev/null 2>&1 || { echo "[!] '$common_script' does not d
 
 # Set the hook editor, using the same approach as git.
 set_editor() {
-  # $GIT_EDITOR appears to always be set to ':' when the hook is executed by Git?
-  # Reference:
+  # $GIT_EDITOR appears to always be set to ':' when the hook is executed by
+  # Git? Reference:
   # - http://stackoverflow.com/q/41468839/885540
   # - https://github.com/tommarshall/git-good-commit/issues/11
   # HOOK_EDITOR=$GIT_EDITOR
@@ -166,8 +166,8 @@ build_commit_trailer_regex() {
   )
 
 
-  # Read custom trailer keys from git config and add them either to specials or trailers.
-  # This loop reads lines matching 'trailer.*.key'.
+  # Read custom trailer keys from git config and add them either to specials or
+  # trailers. This loop reads lines matching 'trailer.*.key'.
   while read -r _ key; do
     if [[ "$key" =~ -by$ ]]; then
       trailers_by+=("$key")
@@ -245,10 +245,12 @@ validate_commit_message() {
   COMMIT_MSG_STR="${COMMIT_MSG_LINES[*]}"
   test -z "${COMMIT_MSG_STR[*]// }" && return;
 
-  # if the commit subject starts with 'fixup! ' there's nothing to validate, we can return here
+  # if the commit subject starts with 'fixup! ' there's nothing to validate, we
+  # can return here
   [[ $COMMIT_SUBJECT == 'fixup! '* ]] && return;
 
-  # skip first token in subject (e.g. issue ID from bugtracker which is validated otherwise)
+  # skip first token in subject (e.g. issue ID from bugtracker which is
+  # validated otherwise)
   skipfirsttokeninsubject=$(git config --get hooks.goodcommit.subjectskipfirsttoken || echo 'false')
   if [ "$skipfirsttokeninsubject" == "true" ]; then
     COMMIT_SUBJECT_TO_PROCESS=${COMMIT_SUBJECT#* }
@@ -257,7 +259,6 @@ validate_commit_message() {
   fi
 
   # 0. Check spelling
-  # ------------------------------------------------------------------------------
   ASPELL=$(which aspell)
   if [ $? -ne 0 ]; then
     echo "Aspell not installed - unable to check spelling"
@@ -270,32 +271,27 @@ validate_commit_message() {
   fi
 
   # 1. Separate subject from body with a blank line
-  # ------------------------------------------------------------------------------
 
   test ${#COMMIT_MSG_LINES[@]} -lt 1 || test -z "${COMMIT_MSG_LINES[1]}"
   test $? -eq 0 || add_warning 2 "Separate subject from body with a blank line"
 
   # 2. Limit the subject line to configured number of characters
-  # ------------------------------------------------------------------------------
 
   subject_max_length=$(git config --get hooks.goodcommit.subjectmaxlength || echo '50')
   test "${#COMMIT_SUBJECT}" -le $subject_max_length
   test $? -eq 0 || add_warning 1 "Limit the subject line to $subject_max_length characters (${#COMMIT_SUBJECT} chars)"
 
   # 3. Capitalize the subject line
-  # ------------------------------------------------------------------------------
 
   [[ ${COMMIT_SUBJECT_TO_PROCESS} =~ ^[[:blank:]]*([[:upper:]]{1}[[:lower:]]*|[[:digit:]]+)([[:blank:]]|[[:punct:]]|$) ]]
   test $? -eq 0 || add_warning 1 "Capitalize the subject line"
 
   # 4. Do not end the subject line with a period
-  # ------------------------------------------------------------------------------
 
   [[ ${COMMIT_SUBJECT} =~ [^\.]$ ]]
   test $? -eq 0 || add_warning 1 "Do not end the subject line with a period"
 
   # 5. Use the imperative mood in the subject line
-  # ------------------------------------------------------------------------------
 
   IMPERATIVE_MOOD_DENYLIST=(
     added          adds          adding
@@ -353,7 +349,6 @@ validate_commit_message() {
   shopt -u nocasematch
 
   # 6. Wrap the body at 72 characters
-  # ------------------------------------------------------------------------------
 
   URL_REGEX='^[[:blank:]]*(https?|ftp|file)://[-A-Za-z0-9+&@#/%?=~_|!:,.;]*[-A-Za-z0-9+&@#/%=~_|]'
 
@@ -378,8 +373,9 @@ validate_commit_message() {
     trimmed_line="${trimmed_line%"${trimmed_line##*[![:space:]]}"}"
     line_number=$((i+1))
 
-    # Check if the trimmed line is longer than 72 characters and does not match a URL
-    # or commit trailer. The URL regex is used inline by stripping its leading caret.
+    # Check if the trimmed line is longer than 72 characters and does not match
+    # a URL or commit trailer. The URL regex is used inline by stripping its
+    # leading caret.
     if [ "${#trimmed_line}" -gt 72 ] && \
        ! [[ "$trimmed_line" =~ ${URL_REGEX#^} ]] && \
        ! [[ "$trimmed_line" =~ $TRAILER_REGEX ]]; then
@@ -388,7 +384,6 @@ validate_commit_message() {
   done
 
   # 7. Ensure the commit subject has more than one word.
-  # ------------------------------------------------------------------------------
 
   if [ "$(echo "${COMMIT_SUBJECT_TO_PROCESS}" | wc -w)" -le 1 ]; then
     add_warning 1 "Do not write single-word commits. Provide a descriptive subject"
@@ -404,9 +399,9 @@ validate_commit_message() {
     add_warning 1 "Avoid using parentheses '()' in commit subjects"
   fi
 
-  # 7c. Disallow conventional commit format
-  # These formats waste precious characters from the 50-character limit
-  # Check for patterns like "type:" or "type(scope):" with optional breaking change indicator
+  # 7c. Disallow conventional commit format These formats waste precious
+  # characters from the 50-character limit Check for patterns like "type:" or
+  # "type(scope):" with optional breaking change indicator
   if [[ ${COMMIT_SUBJECT} =~ ^[a-z]+\([^\)]+\):[[:space:]] ]] || [[ ${COMMIT_SUBJECT} =~ ^[a-z]+!?:[[:space:]] ]]; then
     add_warning 1 "Avoid conventional commit format (e.g., 'chore(scripts):', 'feat:', 'fix:'). Write a direct, descriptive subject"
   fi
@@ -422,13 +417,14 @@ validate_commit_message() {
   fi
 
   # 8. Use the body to explain what and why vs. how
-  # ------------------------------------------------------------------------------
 
-  # Count non-comment, non-blank lines, excluding lines that match the trailer regex.
+  # Count non-comment, non-blank lines, excluding lines that match the trailer
+  # regex.
   NON_COMMENT_COUNT=$(sed '/^[[:space:]]*#/d;/^[[:space:]]*$/d' "${COMMIT_MSG_FILE}" | \
                       sed -E "/$TRAILER_REGEX/d" | wc -l | xargs)
 
-  # If a program source is modified and the commit message is oversimplified, forbid generic subjects.
+  # If a program source is modified and the commit message is oversimplified,
+  # forbid generic subjects.
   if git diff --cached --name-only | grep -Eq '^src/.*\.(c|S)$'; then
     if [ "${NON_COMMENT_COUNT}" -le 1 ]; then
       add_warning 1 "Commit message oversimplified. Use the commit message body to explain what and why."
@@ -439,20 +435,18 @@ validate_commit_message() {
   fi
 
   # 9. Do not start the subject line with whitespace
-  # ------------------------------------------------------------------------------
 
   [[ ${COMMIT_SUBJECT_TO_PROCESS} =~ ^[[:blank:]]+ ]]
   test $? -eq 1 || add_warning 1 "Do not start the subject line with whitespace"
 
   # 10. Disallow backticks anywhere in the commit message.
-  # ------------------------------------------------------------------------------
 
   if sed '/^[[:space:]]*#/d;/^[[:space:]]*$/d' "${COMMIT_MSG_FILE}" | grep -q "\`"; then
     add_warning 1 "Avoid using backticks in commit messages"
   fi
 
-  # 11. Avoid commit subject that simply states a file update (e.g. "Update console.c")
-  # ------------------------------------------------------------------------------
+  # 11. Avoid commit subject that simply states a file update (e.g. "Update
+  # console.c")
 
   if [[ "$COMMIT_SUBJECT_TO_PROCESS" =~ ^(Update|Modify|Change|Fix|Refine|Improve|Revise)[[:space:]]+([^[:space:]]+)$ ]]; then
     candidate="${BASH_REMATCH[2]}"
@@ -463,26 +457,24 @@ validate_commit_message() {
   fi
 
   # 12. Avoid abusive language in commit message content
-  # ------------------------------------------------------------------------------
 
   # Remove comment lines, trailer lines, and URLs.
   FULL_COMMIT_MSG_WITH_SPACE=$(sed '/^[[:space:]]*#/d' "$COMMIT_MSG_FILE" | \
                                sed -E "/$TRAILER_REGEX/d" | sed -E "s@${URL_REGEX#^}@@g")
   FULL_COMMIT_MSG=$(echo "$FULL_COMMIT_MSG_WITH_SPACE" | sed '/^[[:space:]]*$/d')
 
-  # Extended list of abusive words (case-insensitive).
-  # Adjust the list as needed.
+  # Extended list of abusive words (case-insensitive). Adjust the list as
+  # needed.
   ABUSIVE_WORDS_REGEX='\b(fuck|fucking|dick|shit|bitch|asshole|cunt|motherfucker|damn|crap|dumbass|piss)\b'
   if echo "$FULL_COMMIT_MSG" | grep -Eiq "$ABUSIVE_WORDS_REGEX"; then
     add_warning 1 "Commit message contains inappropriate language. Avoid using abusive words"
   fi
 
   # 13. Always use American English.
-  # ------------------------------------------------------------------------------
 
-  # Alert if the commit message appears to be written in Chinese.
-  # This pattern matches Chinese CJK Unified Ideographs range.
-  # Use proper UTF-8 handling to avoid false positives with Unicode symbols like ✓ and ✗.
+  # Alert if the commit message appears to be written in Chinese. This pattern
+  # matches Chinese CJK Unified Ideographs range. Use proper UTF-8 handling to
+  # avoid false positives with Unicode symbols like ✓ and ✗.
   if command -v python3 >/dev/null 2>&1; then
     CHINESE_TEXT=$(echo "$FULL_COMMIT_MSG" | python3 -c "
 import sys, re
@@ -492,9 +484,13 @@ if chinese_chars:
     print(''.join(chinese_chars))
 ")
   else
-    # Fallback: Only detect actual Chinese character patterns if python3 is not available
+
+    # Fallback: Only detect actual Chinese character patterns if python3 is not
+    # available
     CHINESE_TEXT=$(echo "$FULL_COMMIT_MSG" | grep -o "[一-龥]" 2>/dev/null || echo "")
-    # Filter out false positives by checking if the detected text contains actual Chinese words
+
+    # Filter out false positives by checking if the detected text contains
+    # actual Chinese words
     if [ -n "$CHINESE_TEXT" ] && ! echo "$CHINESE_TEXT" | grep -q "[✓✗]"; then
       CHINESE_TEXT="$CHINESE_TEXT"
     else
@@ -512,11 +508,13 @@ if chinese_chars:
     -e "/^  /d")
   MSG_FOR_SPELLCHECK=$(echo "$MSG_FOR_SPELLCHECK_LINE_FINDING" | sed '/^[[:space:]]*$/d')
 
-  # Use aspell to list misspelled words according to American English, ignoring quoted text.
+  # Use aspell to list misspelled words according to American English, ignoring
+  # quoted text.
   MISSPELLED_WORDS=$(echo "$MSG_FOR_SPELLCHECK" | $ASPELL --lang=en --list --home-dir=scripts --personal=aspell-pws)
 
   # Filter out words that are filenames in the git repository
   if [ -n "$MISSPELLED_WORDS" ]; then
+
     # Get comprehensive list of repository-related words to exclude
     # 1. Full filenames with extensions
     # 2. Filenames without extensions
@@ -560,8 +558,14 @@ unset GREP_OPTIONS
 CHANGE_ID_AFTER="Bug|Issue|Test"
 MSG="$1"
 
-# Ensure that a unique Change-Id is present, and generate one if it is not.
-# Partially taken from Gerrit Code Review 3.3.0-56-gbcecc47463
+# Ensure that the Change-Id of the hash chain is present.
+#
+# The Change-Id is a link of the hash chain (tools/hashchain.c): it depends on
+# the previous Change-Id and on the tree being committed, so it is always
+# computed anew. A Change-Id already in the message is dropped; it only hints at
+# an amend. git interpret-trailers places the new trailer, so the hook and `git
+# log` agree on what a trailer is. The post-commit hook repairs the cases this
+# guess gets wrong (an amend with -m or -F).
 add_change_id() {
   clean_message=`sed -e '
     /^diff --git .*/{
@@ -576,150 +580,14 @@ add_change_id() {
     return
   fi
 
-  # Does Change-Id: already exist? if so, exit (no change).
-  if grep -i '^Change-Id:' "$MSG" >/dev/null
-  then
-    return
-  fi
+  old=`grep -i '^Change-Id:' "$MSG" | tail -n 1 | sed 's/^[^:]*:[[:space:]]*//'`
+  id=`"$(dirname "$0")/../../scripts/chain.sh" id "$old"` || exit 1
 
-  id=`_gen_changeid`
   T="$MSG.tmp.$$"
-  AWK=awk
-
-  # Get core.commentChar from git config or use default symbol
-  commentChar=`git config --get core.commentChar`
-  commentChar=${commentChar:-#}
-
-  # How this works:
-  # - parse the commit message as (textLine+ blankLine*)*
-  # - assume textLine+ to be a footer until proven otherwise
-  # - exception: the first block is not footer (as it is the title)
-  # - read textLine+ into a variable
-  # - then count blankLines
-  # - once the next textLine appears, print textLine+ blankLine* as these
-  #   aren't footer
-  # - in END, the last textLine+ block is available for footer parsing
-  awk '
-  BEGIN {
-    # while we start with the assumption that textLine+
-    # is a footer, the first block is not.
-    isFooter = 0
-    footerComment = 0
-    blankLines = 0
-  }
-
-  # Skip lines starting with commentChar without any spaces before it.
-  /^'"$commentChar"'/ { next }
-
-  # Skip the line starting with the diff command and everything after it,
-  # up to the end of the file, assuming it is only patch data.
-  # If more than one line before the diff was empty, strip all but one.
-  /^diff --git / {
-    blankLines = 0
-    while (getline) { }
-    next
-  }
-
-  # Count blank lines outside footer comments
-  /^$/ && (footerComment == 0) {
-    blankLines++
-    next
-  }
-
-  # Catch footer comment
-  /^\[[a-zA-Z0-9-]+:/ && (isFooter == 1) {
-    footerComment = 1
-  }
-
-  /]$/ && (footerComment == 1) {
-    footerComment = 2
-  }
-
-  # We have a non-blank line after blank lines. Handle this.
-  (blankLines > 0) {
-    print lines
-    for (i = 0; i < blankLines; i++) {
-      print ""
-    }
-
-    lines = ""
-    blankLines = 0
-    isFooter = 1
-    footerComment = 0
-  }
-
-  # Detect that the current block is not the footer
-  (footerComment == 0) && (!/^\[?[a-zA-Z0-9-]+:/ || /^[a-zA-Z0-9-]+:\/\//) {
-    isFooter = 0
-  }
-
-  {
-    # We need this information about the current last comment line
-    if (footerComment == 2) {
-      footerComment = 0
-    }
-    if (lines != "") {
-      lines = lines "\n";
-    }
-    lines = lines $0
-  }
-
-  # Footer handling:
-  # If the last block is considered a footer, splice in the Change-Id at the
-  # right place.
-  # Look for the right place to inject Change-Id by considering
-  # CHANGE_ID_AFTER. Keys listed in it (case insensitive) come first,
-  # then Change-Id, then everything else (eg. Signed-off-by:).
-  #
-  # Otherwise just print the last block, a new line and the Change-Id as a
-  # block of its own.
-  END {
-    unprinted = 1
-    if (isFooter == 0) {
-      print lines "\n"
-      lines = ""
-    }
-
-    numlines = split(lines, footer, "\n")
-
-    trailers = ""
-    other_footer = ""
-
-    for (line = 1; line <= numlines; line++) {
-      if (match(tolower(footer[line]), '"$TRAILERS_BY_REGEX"')) {
-        trailers = trailers footer[line] "\n"
-      } else {
-        other_footer = other_footer footer[line] "\n"
-      }
-    }
-
-    if (other_footer != "") {
-      printf "%s", other_footer
-    }
-
-    if (trailers != "") {
-      printf "%s", trailers
-    }
-
-    printf "Change-Id: I'"$id"'\n"
-
-  }' "$MSG" > "$T" && mv "$T" "$MSG" || rm -f "$T"
-}
-
-_gen_changeid_input() {
-  echo "tree `git write-tree`"
-  if parent=`git rev-parse "HEAD^0" 2>/dev/null`
-  then
-    echo "parent $parent"
-  fi
-  echo "author `git var GIT_AUTHOR_IDENT`"
-  echo "committer `git var GIT_COMMITTER_IDENT`"
-  echo
-  printf '%s' "$clean_message"
-}
-
-_gen_changeid() {
-  _gen_changeid_input | git hash-object -t commit --stdin
+  sed -e '/^# -* >8 -*$/,$d' -e '/^diff --git /,$d' "$MSG" |
+    grep -vi '^Change-Id:' | git stripspace --strip-comments |
+    git interpret-trailers --trailer "Change-Id: I$id" > "$T" &&
+    mv "$T" "$MSG" || rm -f "$T"
 }
 
 # It's showtime.

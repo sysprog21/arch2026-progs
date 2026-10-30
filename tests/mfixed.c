@@ -1,6 +1,6 @@
 #include "bench.h"
-#include "fixed.h"
 #include "print.h"
+#include "src/fixed/fixed.h"
 #include "tests.h"
 #include "utest.h"
 
@@ -17,13 +17,15 @@ static const uint32_t inputs[] = {
 static uint32_t run_op1(uint32_t a, uint32_t b)
 {
     int n;
-    return op1(a, b, &n) + (uint32_t) n;
+    uint32_t r = op1(a, b, &n);
+    return r + (uint32_t) n;
 }
 
 static uint32_t run_op1_asm(uint32_t a, uint32_t b)
 {
     int n;
-    return op1_asm(a, b, &n) + (uint32_t) n;
+    uint32_t r = op1_asm(a, b, &n);
+    return r + (uint32_t) n;
 }
 
 int main(void)

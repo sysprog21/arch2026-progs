@@ -75,7 +75,7 @@ jobs:
           }
         done
         # Stay in the submission root: the verifier checks its history.
-        env -u CHAIN_BASE -u CHAIN_TOOL CC=/usr/bin/cc bash .trusted/scripts/chain.sh verify
+        env -u CHAIN_BASE -u CHAIN_TOOL -u CHAIN_EXEMPT CC=/usr/bin/cc bash .trusted/scripts/chain.sh verify
     - name: hash chain, submission's scripts
       run: scripts/chain.sh verify
     # The self-test takes about a minute. It exercises the verifier, so it runs

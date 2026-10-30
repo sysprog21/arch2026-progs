@@ -17,9 +17,15 @@
 #   chain.sh selftest   exercise all of the above in a scratch repository
 #
 # History must be linear: no merge commits since the base commit. Rebase onto
-# the upstream branch instead of merging it, then run `chain.sh rechain`.
+# the upstream branch instead of merging it, then run `chain.sh rechain`. The
+# one exception is a merge commit of the instructor's repository listed in
+# EXEMPT: it adds no tree of its own and is transparent to the chain, whose
+# link through it is the link of the branch it merged.
 
 BASE="${CHAIN_BASE:-75c966c27551ff77931c8b1559b672a5b27490cf}"
+# Merge commits that GitHub made on the instructor's main before merging was
+# restricted to rebasing: pull request 1.
+EXEMPT="${CHAIN_EXEMPT:-c03fbd320208a16c23036a55afd0e9263f20f479}"
 
 here=$(cd "$(dirname "$0")" && pwd)
 source "$here/common.sh"
@@ -45,12 +51,24 @@ build_tool() {
   fi
 }
 
+# Whether a commit is one of the exempt merges: a two-parent commit named in
+# EXEMPT whose tree is that of its second parent.
+is_exempt() {
+  case " $EXEMPT " in *" $1 "*) ;; *) return 1 ;; esac
+  [ "$(git rev-list --parents -n 1 "$1" | wc -w | tr -d ' ')" -eq 3 ] &&
+    [ "$(git rev-parse "$1^{tree}")" = "$(git rev-parse "$1^2^{tree}")" ]
+}
+
 # The Change-Id digits of a commit; the seed for the base commit.
 link() {
   local sha id
   sha=$(git rev-parse --verify -q "$1^{commit}") || return 1
   if [ "$sha" = "$BASE" ]; then
     "$HC" seed "$BASE"
+    return
+  fi
+  if is_exempt "$sha"; then
+    link "$sha^2"
     return
   fi
   id=$(git log -1 --format='%(trailers:key=Change-Id,valueonly,separator=%x2C)' "$sha" | head -n1 | tr -d '\r')
@@ -89,15 +107,16 @@ cmd_verify() {
     throw "The base commit $BASE is missing. Fetch the full history: git fetch --unshallow"
   git merge-base --is-ancestor "$BASE" "$tip" ||
     throw "Commit $tip is not derived from the base commit $BASE.\nCreate your repository as a fork of sysprog21/arch2026-progs."
-  if [ -n "$(git rev-list --merges "$BASE..$tip")" ]; then
+  for sha in $(git rev-list --merges "$BASE..$tip"); do
+    is_exempt "$sha" && continue
     throw "Merge commits are not allowed since the base commit.\nRebase onto the upstream branch instead (git pull --rebase), then run scripts/chain.sh rechain."
-  fi
-  count=$(git rev-list --count "$BASE..$tip") || exit 1
+  done
+  count=$(git rev-list --count --no-merges "$BASE..$tip") || exit 1
   if [ "$count" -eq 0 ]; then
     echo -e "${GREEN}Commit history: no commits since the base commit.${NC}"
     return 0
   fi
-  lines=$(git log --reverse --format='%H %T %(trailers:key=Change-Id,valueonly,separator=%x2C)' "$BASE..$tip" | tr -d '\r') ||
+  lines=$(git log --reverse --topo-order --no-merges --format='%H %T %(trailers:key=Change-Id,valueonly,separator=%x2C)' "$BASE..$tip" | tr -d '\r') ||
     throw "Cannot read the commit history."
   if [ "$(echo "$lines" | wc -l | tr -d ' ')" -ne "$count" ]; then
     throw "A Change-Id trailer spans several lines in one of the last $count commits.\nUse the form 'Change-Id: I<40 hex digits>' on a single line."
@@ -343,6 +362,20 @@ cmd_selftest() {
     git merge -q --no-ff side -m "Merge side" >/dev/null 2>&1
     expect_bad "merge commit"
     git reset -q --hard HEAD~1
+
+    # an exempt merge, as GitHub makes for a pull request that main has not
+    # outrun, is transparent: the chain continues through it
+    git checkout -q -b gh-pr
+    commit seven "Seventh"
+    git checkout -q -
+    git merge -q --no-ff gh-pr -m "Merge pull request" >/dev/null 2>&1
+    expect_bad "merge commit that is not exempt"
+    CHAIN_EXEMPT=$(git rev-parse HEAD)
+    export CHAIN_EXEMPT
+    expect_ok "exempt merge commit"
+    commit eight "Eighth"
+    expect_ok "commit after an exempt merge"
+    unset CHAIN_EXEMPT
 
     # a repository that does not contain the base commit
     git checkout -q --orphan other && git commit -q -m "Elsewhere" --allow-empty

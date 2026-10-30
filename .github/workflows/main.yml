@@ -7,6 +7,8 @@ on:
   push:
     branches: ['**']
   pull_request:
+  # A fork can start a run by hand, e.g. after enabling Actions there.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -19,6 +21,10 @@ concurrency:
 
 env:
   XPACK_GCC: 15.2.0-1
+  CLANG_FORMAT_VERSION: 20.1.8
+  # Hosted runners have 4 cores (2 on private repositories); the builds are
+  # independent per level, so oversubscribing a little is harmless.
+  MAKEFLAGS: -j4
 
 jobs:
   # Source hygiene needs neither the cross toolchain nor the emulator.
@@ -27,7 +33,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         persist-credentials: false
     - name: newline
@@ -36,7 +42,7 @@ jobs:
       run: make unittest
     - name: clang-format 20
       run: |
-        pipx install clang-format==20.1.8
+        pipx install clang-format==${CLANG_FORMAT_VERSION}
         CLANG_FORMAT=clang-format .ci/format.sh
 
   # The hash chain of Change-Ids needs the whole history, and a pull request
@@ -46,7 +52,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         fetch-depth: 0
         ref: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -54,7 +60,7 @@ jobs:
     # The submission must not be the judge of its own history: verify the chain
     # with the scripts of the instructor's repository first. A missing verifier
     # is a failure, never a reason to skip.
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         repository: sysprog21/arch2026-progs
         ref: main
@@ -93,10 +99,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         persist-credentials: false
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
       with:
         repository: sysprog21/arch2026-progs
         ref: main
@@ -112,14 +118,15 @@ jobs:
         done
     - name: install-dependencies
       run: |
-        sudo apt-get update
-        sudo apt-get -q -y install --no-install-recommends build-essential \
+        # build-essential is already on the runner image.
+        sudo apt-get update -q
+        sudo apt-get -q -y install --no-install-recommends \
             device-tree-compiler python3-matplotlib
     # The caches are saved right after their build: a plain cache step saves
     # only when the whole job passes, and the skeleton fails grading by design.
     - name: restore the cross toolchain
       id: xpack
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v6
       with:
         path: ${{ runner.temp }}/xpack-riscv-none-elf-gcc-${{ env.XPACK_GCC }}
         key: xpack-${{ runner.os }}-${{ runner.arch }}-${{ env.XPACK_GCC }}
@@ -134,7 +141,7 @@ jobs:
         tar -xzf "$name"
     - name: save the cross toolchain
       if: steps.xpack.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v6
       with:
         path: ${{ runner.temp }}/xpack-riscv-none-elf-gcc-${{ env.XPACK_GCC }}
         key: ${{ steps.xpack.outputs.cache-primary-key }}
@@ -149,7 +156,7 @@ jobs:
         echo "sha=$sha" >> "$GITHUB_OUTPUT"
     - name: restore rv32emu
       id: emu-cache
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v6
       with:
         path: .trusted/third_party/rv32emu
         key: rv32emu-${{ runner.os }}-${{ runner.arch }}-${{ steps.emu.outputs.sha }}-${{ hashFiles('.trusted/mk/rv32emu.mk') }}
@@ -160,7 +167,7 @@ jobs:
         make -C .trusted deps RV32EMU_REV=${{ steps.emu.outputs.sha }}
     - name: save rv32emu
       if: steps.emu-cache.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v6
       with:
         path: .trusted/third_party/rv32emu
         key: ${{ steps.emu-cache.outputs.cache-primary-key }}
@@ -173,7 +180,7 @@ jobs:
         for chart in cycles-per-call speedup footprint; do
           test -s "results/$chart.png"
         done
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       if: ${{ !cancelled() }}
       with:
         name: cycles
